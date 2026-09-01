@@ -183,6 +183,13 @@ knowing:
 - Posts beyond the hundredth do not reach the wall. They are all still on the
   Board, which pages normally.
 
+All columns share that one period, so a column holding slightly less content
+than the tallest one would end early and leave a black void — and the same void
+again at every copy boundary. Rather than let that happen, each column spreads
+the difference across the gaps between its own cards, so it fills the period
+exactly. A column carrying one card fewer than its neighbours simply sits a
+little more airily; nothing stops short.
+
 **Auto-scroll** runs at about 26px/s. It stops while the pointer is resting on
 a card, so anything can be read simply by pointing at it, and resumes a second
 after the pointer leaves. Deliberate gestures — scrolling, typing, tapping —

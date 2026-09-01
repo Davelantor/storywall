@@ -9,6 +9,13 @@ type Props = {
   size?: "display" | "compact";
   /** Pages that carry their own heading (the form, moderation) hide the title. */
   showTitle?: boolean;
+  /**
+   * Pins the header to the top of the viewport instead of scrolling away with
+   * the page. Used on the wall, where the page itself scrolls continuously -
+   * without this the header would scroll off within a few seconds of the
+   * auto-scroll starting and never return.
+   */
+  sticky?: boolean;
 };
 
 /**
@@ -19,11 +26,17 @@ export default function SiteHeader({
   active,
   size = "compact",
   showTitle = true,
+  sticky = false,
 }: Props) {
   const isDisplay = size === "display";
 
   return (
-    <header className="border-b border-nd-line-soft bg-nd-black">
+    <header
+      className={cn(
+        "border-b border-nd-line-soft bg-nd-black",
+        sticky && "sticky top-0 z-30",
+      )}
+    >
       <div
         className={cn(
           isDisplay ? "nd-container-wide" : "nd-container",

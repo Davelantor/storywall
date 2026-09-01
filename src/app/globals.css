@@ -305,6 +305,20 @@
     }
   }
 
+  /* --- Column stack ----------------------------------------------------- */
+  /* One copy of one masonry column. Every column is stretched to the same loop
+     period, so a column that packed short would end in a void; WallClient
+     spreads that slack across this gap instead. The gap only changes when the
+     wall's contents do - once on load, and once after an arrival lands - and
+     the transition keeps that from being an abrupt jump. */
+
+  .nd-column-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--nd-col-gap, 20px);
+    transition: gap 600ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
   /* --- Arrival slot ----------------------------------------------------- */
   /* The gap that opens on the wall to receive an incoming post. Animating
      grid-template-rows from 0fr to 1fr grows the row to the card's natural
@@ -526,6 +540,10 @@
 
   .nd-card-interactive:hover {
     transform: none;
+  }
+
+  .nd-column-stack {
+    transition: none;
   }
 
   .nd-slot,

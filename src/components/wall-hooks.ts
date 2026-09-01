@@ -52,7 +52,19 @@ const BREAKPOINTS: Array<{ minWidth: number; columns: number }> = [
   { minWidth: 0, columns: 1 },
 ];
 
-export function useColumnCount(): number {
+/**
+ * Below this many cards, a column has too few gaps to spread real content
+ * variance across, so any difference between its cards' actual heights shows
+ * up as one large, visible gap rather than being smoothed into several small
+ * ones. A wide venue display asked to fill 6 columns from a dozen posts would
+ * hit exactly that - each column gets just one or two gaps, so the ordinary
+ * few-percent variance between two posts' text length becomes an obvious
+ * void. Capping columns by how much content actually exists keeps every
+ * column stocked enough to average that out.
+ */
+const MIN_CARDS_PER_COLUMN = 4;
+
+export function useColumnCount(itemCount: number): number {
   // Start at 1 so the server and the first client render agree; the effect
   // widens it immediately after mount.
   const [columns, setColumns] = useState(1);
@@ -61,13 +73,18 @@ export function useColumnCount(): number {
     const measure = () => {
       const width = window.innerWidth;
       const match = BREAKPOINTS.find((bp) => width >= bp.minWidth);
-      setColumns(match ? match.columns : 1);
+      const byWidth = match ? match.columns : 1;
+      const byContent = Math.max(
+        1,
+        Math.floor(itemCount / MIN_CARDS_PER_COLUMN),
+      );
+      setColumns(Math.max(1, Math.min(byWidth, byContent)));
     };
 
     measure();
     window.addEventListener("resize", measure, { passive: true });
     return () => window.removeEventListener("resize", measure);
-  }, []);
+  }, [itemCount]);
 
   return columns;
 }
@@ -75,13 +92,16 @@ export function useColumnCount(): number {
 /* ==========================================================================
    Masonry distribution
    --------------------------------------------------------------------------
-   Cards are packed into the currently shortest column rather than laid out
-   round-robin, which is what produces the uneven, storyboard-like waterfall.
-   Height is estimated from content length: cheap, deterministic, and good
-   enough because we never force equal heights on the wall.
+   Cards are packed into the column that leaves the wall best balanced, rather
+   than laid out round-robin - which is what produces the uneven,
+   storyboard-like waterfall. Height is estimated from content length: cheap,
+   deterministic, and good enough because we never force equal heights on the
+   wall itself. The loop period does force equal heights on the copies below
+   it, though (see WallClient), which is what makes packing quality matter:
+   a lopsided assignment shows up there as a visible gap.
    ========================================================================== */
 
-function estimateHeight(item: Opportunity): number {
+export function estimateHeight(item: Opportunity): number {
   const CHARS_PER_LINE = 34;
   const LINE_HEIGHT = 23;
 
@@ -96,9 +116,32 @@ function estimateHeight(item: Opportunity): number {
 }
 
 /**
+ * Vertical gap between cards, and between the last card of one copy and the
+ * first of the next. Fixed rather than responsive so the loop period is
+ * exact. A column packed short widens its own gap from here to fill the
+ * period - see `--nd-col-gap` / `.nd-column-stack` in WallClient.
+ */
+export const CARD_GAP_PX = 20;
+
+/**
  * Assigns each item to a column, keeping earlier assignments stable so that
  * appending a page (or a live arrival) never reshuffles the whole wall.
- * Recomputes from scratch only when the column count changes.
+ * Recomputes from scratch only when the column count changes - which is also
+ * the moment a wide screen like a venue display, with many more columns and
+ * so far fewer cards in each, needs the best packing it can get: with only a
+ * handful of cards per column, one bad assignment is a much larger fraction
+ * of that column's content, and shows up as a proportionally larger gap.
+ *
+ * Each item goes into whichever column currently holds the least total
+ * content. A fancier one-step look-ahead - simulating the per-card gap each
+ * candidate would leave the *whole wall* needing - was tried and made things
+ * worse: comparing a candidate against a column that's already run ahead
+ * makes every other choice look artificially catastrophic by comparison
+ * (it's being measured against a period that column's own past growth set),
+ * so the metric kept recommending the already-largest column and the
+ * imbalance fed on itself. Comparing current totals doesn't have that
+ * feedback loop, because every comparison is against the same today, not
+ * against whichever column happens to be biggest today.
  */
 export function useMasonryColumns(
   items: Opportunity[],
@@ -106,7 +149,7 @@ export function useMasonryColumns(
   /**
    * Column overrides by id. An arriving post is dropped next to a card the
    * viewer can actually see, so its column is chosen by the arrival rather
-   * than by the shortest-column packer.
+   * than by the packer below.
    */
   pinned?: Map<string, number>,
 ): Opportunity[][] {
@@ -259,15 +302,15 @@ export function useRevealObserver(enabled: boolean) {
    subtracting P from scrollY is invisible. The wrap runs on manual scrolling
    too, which is what makes it endless rather than merely automatic.
 
-   Auto-scroll pauses on any interaction and resumes after 10s of quiet, and is
-   disabled outright when the viewer prefers reduced motion - in which case
-   WallClient renders a single copy and the page behaves normally.
+   Exactly one rule governs whether the wall is moving: it scrolls whenever
+   the pointer is not resting on a card, and stops the instant it is - no
+   delay either way, and nothing else (a click, a keypress, a wheel nudge)
+   holds it still or wakes it. Disabled outright when the viewer prefers
+   reduced motion - in which case WallClient renders a single copy and the
+   page behaves normally.
    ========================================================================== */
 
 const CURSOR_IDLE_MS = 3000;
-const RESUME_IDLE_MS = 10_000;
-/** How long after the pointer leaves a card before the wall starts moving again. */
-const HOVER_RESUME_MS = 1000;
 const PIXELS_PER_SECOND = 26;
 
 export type WallLoopState = { scrolling: boolean; cursorHidden: boolean };
@@ -288,14 +331,13 @@ export function useWallLoop({
   const [scrolling, setScrolling] = useState(false);
   const [cursorHidden, setCursorHidden] = useState(false);
 
+  // For cursor-hiding only (kiosk mode) - unrelated to whether the wall moves.
   const lastInteraction = useRef(Date.now());
-  const pausedUntil = useRef(Date.now() + 1200);
 
-  // Hovering a card holds the wall still so it can be read. Refs rather than
-  // state: the idle tick below is the single place that decides whether the
-  // wall moves, and re-rendering on every pointer crossing would be wasteful.
+  // Hovering a card holds the wall still so it can be read. A ref rather than
+  // state: it's read straight from the pointer handlers below with no delay,
+  // so there's nothing an idle tick needs to reconcile it against.
   const hovering = useRef(false);
-  const hoverLeftAt = useRef(0);
 
   /** Subtracts one whole period once we are far enough in for it to be invisible. */
   const wrap = useCallback(() => {
@@ -333,51 +375,42 @@ export function useWallLoop({
     return () => window.removeEventListener("scroll", onScroll);
   }, [enabled, wrap]);
 
-  // Deliberately taking control - scrolling, typing, tapping - holds the wall
-  // for the full 10s. Plain pointer movement is not in this list: with
-  // hover-to-pause below, moving the mouse across the screen should not stop
-  // the wall, only coming to rest on a card should.
+  // Cursor visibility only (kiosk mode) - any activity wakes the pointer, and
+  // it hides again after CURSOR_IDLE_MS of quiet. This has no bearing on
+  // whether the wall is scrolling; that's governed entirely by hover, below.
   useEffect(() => {
-    if (!enabled && !kiosk) return;
+    if (!kiosk) return;
 
-    const takeControl = () => {
-      const now = Date.now();
-      lastInteraction.current = now;
-      pausedUntil.current = now + RESUME_IDLE_MS;
-      setCursorHidden(false);
-      setScrolling(false);
-    };
-
-    // Movement alone only wakes the pointer back up for kiosk mode.
-    const wakePointer = () => {
+    const wake = () => {
       lastInteraction.current = Date.now();
       setCursorHidden(false);
     };
 
-    const controlEvents: Array<keyof WindowEventMap> = [
+    const events: Array<keyof WindowEventMap> = [
+      "mousemove",
       "mousedown",
       "wheel",
       "touchstart",
       "touchmove",
       "keydown",
     ];
-
-    for (const name of controlEvents)
-      window.addEventListener(name, takeControl, { passive: true });
-    window.addEventListener("mousemove", wakePointer, { passive: true });
-
+    for (const name of events) window.addEventListener(name, wake, { passive: true });
     return () => {
-      for (const name of controlEvents)
-        window.removeEventListener(name, takeControl);
-      window.removeEventListener("mousemove", wakePointer);
+      for (const name of events) window.removeEventListener(name, wake);
     };
-  }, [enabled, kiosk]);
+  }, [kiosk]);
 
-  // Hover-to-pause, delegated on the track so it covers every card including
-  // the duplicated copies, and keeps working as cards come and go.
+  // The one rule: scrolling stops the instant the pointer rests on a card,
+  // and resumes the instant it leaves - no delay in either direction, and
+  // nothing else (a click, a keypress, a wheel nudge) affects it. Delegated
+  // on the track so it covers every card including the duplicated copies, and
+  // keeps working as cards come and go.
   useEffect(() => {
     const track = trackRef.current;
-    if (!track || !enabled) return;
+    if (!track || !enabled) {
+      setScrolling(false);
+      return;
+    }
 
     const cardUnder = (node: EventTarget | null) =>
       node instanceof Element ? node.closest("article") : null;
@@ -393,8 +426,11 @@ export function useWallLoop({
       // Ignore crossings between elements inside the same card.
       if (cardUnder(event.relatedTarget)) return;
       hovering.current = false;
-      hoverLeftAt.current = Date.now();
+      setScrolling(true);
     };
+
+    hovering.current = false;
+    setScrolling(true);
 
     track.addEventListener("pointerover", onOver);
     track.addEventListener("pointerout", onOut);
@@ -404,30 +440,21 @@ export function useWallLoop({
     };
   }, [enabled, trackRef]);
 
-  // Idle clock: pointer at 3s, auto-scroll resumes at 10s.
+  // Cursor-hide idle clock (kiosk only) - independent of the scroll rule above.
   useEffect(() => {
-    if (!enabled && !kiosk) {
-      setScrolling(false);
+    if (!kiosk) {
       setCursorHidden(false);
       return;
     }
 
     const tick = () => {
-      const now = Date.now();
-      setCursorHidden(kiosk && now - lastInteraction.current > CURSOR_IDLE_MS);
-      setScrolling(
-        enabled &&
-          now > pausedUntil.current &&
-          !hovering.current &&
-          now - hoverLeftAt.current > HOVER_RESUME_MS,
-      );
+      setCursorHidden(Date.now() - lastInteraction.current > CURSOR_IDLE_MS);
     };
 
     tick();
-    // Fast enough that the 1s hover resume lands close to on time.
     const id = window.setInterval(tick, 150);
     return () => window.clearInterval(id);
-  }, [enabled, kiosk]);
+  }, [kiosk]);
 
   // The scroll loop.
   useEffect(() => {

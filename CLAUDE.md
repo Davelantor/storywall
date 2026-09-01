@@ -100,10 +100,59 @@ Invariants that keep the seam invisible — break any and it visibly jitters:
 Verify periodicity after any change by measuring every card's offset against
 its twin one copy down: there must be exactly **one** distinct delta.
 
-**Auto-scroll.** Always on (not just kiosk), ~26px/s. Pauses while the pointer
-rests on a card, resuming 1s after it leaves. Deliberate gestures — wheel,
-touch, keys, clicks — hold it for 10s instead. Plain `mousemove` does *not*
-pause; it only wakes the pointer for kiosk mode.
+**Column slack.** The period is the *tallest* column, so every shorter column
+would otherwise stop early and leave a void — and the same void again at every
+copy boundary, because the slack repeats. Each column instead spreads its own
+slack across its own card gaps (`--nd-col-gap` on the column wrapper, consumed
+by `.nd-column-stack`), so it fills the period exactly. Two consequences:
+
+- **Measure card heights, never the container.** The container's height depends
+  on the gap we are about to set from it. `measureColumns()` sums the children.
+- **The distribution is frozen while an arrival is in flight.** The opening slot
+  grows the period by a whole card over its 780ms; redistributing that every
+  frame would pull every other column apart in sympathy. It is recomputed once,
+  after the slot is torn down, and `.nd-column-stack` transitions the change.
+- **A column whose shape hasn't changed keeps its exact gap.** `lastShapes`
+  remembers each column's card count and measured content from the last time
+  its gap was set; WallClient only rewrites `--nd-col-gap` for a column whose
+  shape differs from that. A card landing in one column would otherwise still
+  move every *other* column's cards too, since the shared period grew and the
+  old "redistribute across everyone" pass would re-spread the new slack over
+  the whole wall on every insertion. The untouched columns instead simply stop
+  reaching the new period exactly - the slack becomes blank space after their
+  last card, before the next copy starts, rather than being smoothed away.
+  That's an accepted trade: visual stability in the columns nothing was added
+  to, over a perfectly filled period in all of them. Reset to `null` (forcing
+  every column to recompute) whenever the column count changes, since the
+  indices no longer refer to the same columns at all.
+
+`pickLandingSpot()` therefore favours whichever on-screen column currently
+holds the *least total content* — the same rule the initial packer in
+`useMasonryColumns` uses for every card, arrival or not, so a wide venue
+display with many columns and few cards each starts balanced rather than
+needing arrivals to correct it later. A one-step look-ahead that simulated the
+per-card gap each candidate would leave the *whole wall* needing was tried
+instead and made things worse: comparing a candidate against a column that has
+already run ahead makes every other choice look artificially catastrophic by
+comparison, since it is being measured against a period that column's own past
+growth set — so the metric kept recommending the already-largest column and
+the imbalance fed on itself. Comparing plain current totals doesn't have that
+feedback loop, because every candidate is measured against the same today.
+Verify by rehearsing eight-plus arrivals in a row (numpad **+** held or
+repeated) and confirming card counts across columns stay within one of each
+other, and by resizing to a wide viewport (more columns, fewer cards each) and
+confirming no column sits meaningfully shorter than its neighbours.
+
+**Auto-scroll.** Always on (not just kiosk), ~26px/s. Exactly one rule governs
+it: the wall scrolls whenever the pointer is not resting on a card, and stops
+the instant it is — no delay in either direction, and nothing else (a click, a
+keypress, a wheel nudge) holds it still or wakes it. An arrival landing does
+not pause it either — the whole point of the entrance is that it plays out
+against a wall that keeps moving. Kiosk's cursor-hiding runs on its own
+independent idle clock (`CURSOR_IDLE_MS`, any activity wakes it) and has no
+bearing on whether the wall is scrolling. There is deliberately no
+keyboard-focus equivalent of hover-pause, so a keyboard user tabbing through
+cards does not get one held still to read — flag this if it comes up.
 
 **Arrivals.** New posts from the 20s poll go into a **queue**, not straight onto
 the wall. One is released at a time (`ARRIVAL_SPACING_MS`) and plays a

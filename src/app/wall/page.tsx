@@ -57,8 +57,11 @@ export default async function WallPage({ searchParams }: Props) {
         Skip to the wall
       </a>
 
-      {/* Kiosk mode hides all navigation chrome for the unattended screen. */}
-      {!kiosk && <SiteHeader active="wall" size="display" />}
+      {/* Kiosk mode hides all navigation chrome for the unattended screen.
+          Sticky because the wall auto-scrolls continuously - a header that
+          scrolled with the page would leave within a few seconds and never
+          come back. */}
+      {!kiosk && <SiteHeader active="wall" size="display" sticky />}
 
       <main
         id="main"
