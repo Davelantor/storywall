@@ -1,0 +1,528 @@
+@import "tailwindcss";
+
+/* ===========================================================================
+   NORDEEP brand tokens
+   ---------------------------------------------------------------------------
+   Sampled from the computed styles on https://nordeep.com (September 2026):
+     body background          rgb(0, 0, 0)          #000000
+     body text                rgb(224, 224, 224)    #E0E0E0
+     heading text             rgb(255, 255, 255)    #FFFFFF
+     primary accent           rgb(228, 29, 92)      #E41D5C
+     secondary accent         rgb(244, 82, 77)      #F4524D
+     panel surfaces           rgb(17,17,17) / rgb(25,25,25) / rgb(37,37,37)
+     deep navy panel          rgb(11, 24, 44)       #0B182C
+     typefaces                Poppins (400-800), Montserrat (400/700)
+     primary button           #E41D5C bg, #FFF text, 3px solid #FFF border,
+                              4px radius, 10px 20px padding, uppercase 700,
+                              0.2s transition; hover inverts to #FFF bg / #000 text
+   =========================================================================== */
+
+@theme {
+  --color-nd-black: #000000;
+  --color-nd-surface: #111111;
+  --color-nd-surface-2: #191919;
+  --color-nd-surface-3: #252525;
+  --color-nd-navy: #0b182c;
+
+  --color-nd-white: #ffffff;
+  --color-nd-body: #e0e0e0;
+  /* Both greys are held above 4.5:1 against the #111 card surface, which is
+     the darkest ground they ever sit on. Anything dimmer fails WCAG AA. */
+  --color-nd-muted: #a6a6a6;
+  --color-nd-faint: #8a8a8a;
+
+  --color-nd-accent: #e41d5c;
+  --color-nd-accent-hi: #ff5c8a;
+  --color-nd-accent-2: #f4524d;
+
+  --color-nd-line: #2a2a2a;
+  --color-nd-line-soft: #1d1d1d;
+
+  --font-sans: var(--font-poppins), "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-montserrat), "Montserrat", var(--font-poppins),
+    "Poppins", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-nd: 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+@layer base {
+  html {
+    background-color: var(--color-nd-black);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-nd-black);
+    color: var(--color-nd-body);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.7;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Never let an embedded copy force horizontal scroll on the host page. */
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--color-nd-white);
+    font-family: var(--font-sans);
+    font-weight: 700;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  /* Visible, high-contrast focus for keyboard users on a black ground. */
+  :focus-visible {
+    outline: 2px solid var(--color-nd-accent-hi);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  ::selection {
+    background: var(--color-nd-accent);
+    color: #fff;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-nd-black);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-nd-surface-3);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3a3a3a;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Typographic scale - heavy, tight, uppercase display headings
+   --------------------------------------------------------------------------- */
+
+@utility nd-display {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 1.02;
+  color: var(--color-nd-white);
+}
+
+@utility nd-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  line-height: 1.4;
+}
+
+@utility nd-container {
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+  padding-inline: 20px;
+}
+
+@utility nd-container-wide {
+  width: 100%;
+  max-width: 2200px;
+  margin-inline: auto;
+  padding-inline: 20px;
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons - padding, radius, weight and transition copied from nordeep.com
+   --------------------------------------------------------------------------- */
+
+@layer components {
+  .nd-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: var(--radius-nd);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    transition: 0.2s ease-in-out;
+    border: 3px solid transparent;
+  }
+
+  .nd-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* The site's headline CTA. */
+  .nd-btn-primary {
+    background-color: var(--color-nd-accent);
+    color: #ffffff;
+    border-color: #ffffff;
+  }
+
+  .nd-btn-primary:hover:not(:disabled) {
+    background-color: #ffffff;
+    border-color: #ffffff;
+    color: #000000;
+  }
+
+  /* Quieter variant for in-page controls. */
+  .nd-btn-ghost {
+    background-color: transparent;
+    color: var(--color-nd-white);
+    border-width: 1px;
+    border-color: #ffffff;
+    padding: 12px 20px;
+  }
+
+  .nd-btn-ghost:hover:not(:disabled) {
+    background-color: var(--color-nd-accent);
+    border-color: var(--color-nd-accent);
+    color: #ffffff;
+  }
+
+  .nd-btn-quiet {
+    background-color: var(--color-nd-surface-2);
+    color: var(--color-nd-body);
+    border-width: 1px;
+    border-color: var(--color-nd-line);
+    padding: 12px 20px;
+  }
+
+  .nd-btn-quiet:hover:not(:disabled) {
+    border-color: #ffffff;
+    color: #ffffff;
+  }
+
+  /* --- Form controls ---------------------------------------------------- */
+
+  .nd-field {
+    width: 100%;
+    background-color: var(--color-nd-surface);
+    border: 1px solid var(--color-nd-line);
+    border-radius: var(--radius-nd);
+    color: var(--color-nd-white);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    padding: 12px 14px;
+    transition: border-color 0.2s ease-in-out, background-color 0.2s ease-in-out;
+  }
+
+  .nd-field::placeholder {
+    color: var(--color-nd-faint);
+  }
+
+  .nd-field:hover {
+    border-color: #3a3a3a;
+  }
+
+  .nd-field:focus {
+    border-color: var(--color-nd-accent);
+    background-color: var(--color-nd-surface-2);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(228, 29, 92, 0.25);
+  }
+
+  .nd-field[aria-invalid="true"] {
+    border-color: var(--color-nd-accent-2);
+  }
+
+  .nd-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-nd-body);
+    margin-bottom: 7px;
+  }
+
+  /* --- Cards ------------------------------------------------------------ */
+
+  .nd-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--color-nd-surface);
+    border: 1px solid var(--color-nd-line-soft);
+    border-radius: var(--radius-nd);
+    padding: 20px;
+    transition:
+      border-color 0.2s ease-in-out,
+      transform 0.2s ease-in-out,
+      background-color 0.2s ease-in-out;
+  }
+
+  @media (hover: hover) {
+    .nd-card-interactive:hover {
+      border-color: var(--color-nd-accent);
+      border-width: 2px;
+      /* Keep total box size identical so the masonry columns do not reflow. */
+      padding: 19px;
+      transform: translateY(-3px);
+      background-color: var(--color-nd-surface-2);
+    }
+  }
+
+  .nd-card:focus-within {
+    border-color: var(--color-nd-accent);
+  }
+
+  /* --- View toggle ------------------------------------------------------ */
+  /* Sits at 10% until pointed at, so it stays out of the way on the venue
+     screen. Scoped to hover-capable pointers: on a touch device there is no
+     hover to reveal it with, and this is the only way between Wall and Board,
+     so phones and tablets get it at full strength. focus-within keeps it
+     reachable by keyboard, which hover alone would strand. */
+  @media (hover: hover) {
+    .nd-view-toggle {
+      opacity: 0.1;
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    .nd-view-toggle:hover,
+    .nd-view-toggle:focus-within {
+      opacity: 1;
+    }
+  }
+
+  /* --- Card tap target -------------------------------------------------- */
+  /* Paired with src/components/CardOpenTarget.tsx. The ::after overlay is what
+     makes the whole card tappable; siblings that must stay clickable carry
+     `relative z-10` to sit above it. */
+
+  .nd-card-target {
+    text-align: left;
+    transition: color 0.2s ease-in-out;
+  }
+
+  .nd-card-target::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-nd);
+  }
+
+  .nd-card-target:hover {
+    color: var(--color-nd-accent-hi);
+  }
+
+  /* Draw the focus ring on the stretched overlay rather than on the title
+     text, so the indicator outlines the area that actually responds to the
+     click. Without this the card's primary control has no visible focus. */
+  .nd-card-target:focus-visible {
+    outline: none;
+  }
+
+  .nd-card-target:focus-visible::after {
+    outline: 2px solid var(--color-nd-accent-hi);
+    outline-offset: 2px;
+  }
+
+  /* --- Filter chips ----------------------------------------------------- */
+
+  .nd-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--color-nd-line);
+    background-color: transparent;
+    color: var(--color-nd-body);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: 0.2s ease-in-out;
+  }
+
+  .nd-chip:hover {
+    border-color: #ffffff;
+    color: #ffffff;
+  }
+
+  .nd-chip[aria-pressed="true"] {
+    background-color: var(--color-nd-accent);
+    border-color: var(--color-nd-accent);
+    color: #ffffff;
+  }
+
+  .nd-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--color-nd-line);
+    color: var(--color-nd-muted);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Motion
+   --------------------------------------------------------------------------- */
+
+@keyframes nd-arrive {
+  0% {
+    box-shadow: 0 0 0 0 rgba(228, 29, 92, 0);
+    border-color: var(--color-nd-line-soft);
+  }
+  18% {
+    box-shadow: 0 0 26px 2px var(--nd-arrive-glow, rgba(228, 29, 92, 0.55));
+    border-color: var(--nd-arrive-border, var(--color-nd-accent));
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(228, 29, 92, 0);
+    border-color: var(--color-nd-line-soft);
+  }
+}
+
+@keyframes nd-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes nd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Cards fade and rise as the IntersectionObserver on /wall marks them revealed.
+   Two deliberate choices here:
+
+   1. The hiding is scoped to [data-reveal="on"], which WallClient sets in a
+      layout effect once mounted. If JavaScript never runs - or fails - the
+      attribute is absent and every card stays visible, rather than sitting at
+      opacity 0 forever.
+   2. A transition rather than a keyframe animation. An animation with
+      fill-mode: both holds its "from" state whenever the browser is not
+      advancing it - a backgrounded tab, for instance - which leaves the wall
+      blank. A transition always resolves to the declared end state. */
+.nd-reveal {
+  opacity: 1;
+}
+
+[data-reveal="on"] .nd-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 620ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 620ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-delay: var(--nd-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+[data-reveal="on"] .nd-reveal[data-revealed="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+.nd-arrived {
+  animation: nd-arrive 2600ms ease-out 1;
+}
+
+.nd-live-dot {
+  animation: nd-pulse 2.4s ease-in-out infinite;
+}
+
+.nd-spinner {
+  animation: nd-spin 900ms linear infinite;
+}
+
+/* Kiosk mode hides the pointer once the screen is idle. */
+.nd-cursor-hidden,
+.nd-cursor-hidden * {
+  cursor: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion: no reveal animation, no glow, no kiosk auto-scroll.
+   The auto-scroll itself is also disabled in JS - see useKioskMode.
+   --------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .nd-reveal,
+  [data-reveal="on"] .nd-reveal,
+  [data-reveal="on"] .nd-reveal[data-revealed="true"] {
+    opacity: 1;
+    animation: none;
+    transition: none;
+    transform: none;
+  }
+
+  .nd-card-interactive:hover {
+    transform: none;
+  }
+}
+
+/* Screen-reader-only text that still receives focus when tabbed to. */
+.nd-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.nd-skip-link:focus {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 100;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 12px 18px;
+  clip: auto;
+  overflow: visible;
+  background: var(--color-nd-accent);
+  color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
+  border-radius: var(--radius-nd);
+}
