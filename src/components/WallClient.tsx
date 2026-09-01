@@ -10,15 +10,14 @@ import type { Opportunity } from "@/lib/types";
 
 import ArrivalFlight from "./ArrivalFlight";
 import DetailSheet from "./DetailSheet";
-import OpportunityCard from "./OpportunityCard";
+import WallColumn from "./WallColumn";
 import {
-  CARD_GAP_PX,
+  estimateHeight,
   useColumnCount,
+  useCursorIdle,
   useIsomorphicLayoutEffect,
   useMasonryColumns,
   useReducedMotion,
-  useRevealObserver,
-  useWallLoop,
 } from "./wall-hooks";
 
 const ARRIVAL_GLOW_MS = 2800;
@@ -68,186 +67,32 @@ export default function WallClient({
   const reducedMotion = useReducedMotion();
   const columnCount = useColumnCount(items.length);
   const columns = useMasonryColumns(items, columnCount, pinned);
-  const revealRef = useRevealObserver(!reducedMotion);
-
-  /* ------------------------------------------------------------ loop sizing */
-
-  const trackRef = useRef<HTMLDivElement>(null);
-  // The first copy of each column, measured to derive the loop period.
-  const firstCopyRefs = useRef<Array<HTMLDivElement | null>>([]);
-  // The column wrappers, which carry each column's own gap. Set on the wrapper
-  // rather than the copy so every copy of a column inherits the same value.
-  const columnRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const periodRef = useRef(0);
-  // The shape (card count, content height) each column had last time its gap
-  // was set. A column whose shape hasn't changed keeps its existing gap
-  // untouched - see the comment in measure() below for why.
-  const lastShapes = useRef<Array<{ cards: number; content: number }> | null>(
-    null,
-  );
-
-  const [copies, setCopies] = useState(1);
-
-  // A looping wall needs a finite, repeating set, so reduced motion gets a
-  // single copy and an ordinary page instead.
-  const wantsLoop = !reducedMotion && items.length > 0;
-  /** True from the moment a slot is created until it is torn down again. */
-  const arrivalInFlight = slotId !== null;
-
-  /**
-   * Each column's card heights, deliberately excluding the gap between them.
-   * Measuring the containers instead would be circular: the gap is exactly what
-   * we set from this, so it must not feed back into the measurement.
-   */
-  const measureColumns = useCallback(
-    (count: number) =>
-      firstCopyRefs.current.slice(0, count).map((el) => {
-        if (!el) return { cards: 0, content: 0 };
-        const content = Array.from(el.children).reduce(
-          (total, child) => total + child.getBoundingClientRect().height,
-          0,
-        );
-        return { cards: el.children.length, content };
-      }),
-    [],
-  );
-
-  useIsomorphicLayoutEffect(() => {
-    const track = trackRef.current;
-    if (!wantsLoop || !track) {
-      periodRef.current = 0;
-      track?.style.removeProperty("--nd-period");
-      columnRefs.current.forEach((el) =>
-        el?.style.removeProperty("--nd-col-gap"),
-      );
-      lastShapes.current = null;
-      setCopies(1);
-      return;
-    }
-
-    // A new column count means the indices below refer to entirely different
-    // columns than last time (there may not even be the same number of them),
-    // so every column's gap needs a fresh look rather than being compared
-    // against a shape that described some other column.
-    if (lastShapes.current && lastShapes.current.length !== columnCount) {
-      lastShapes.current = null;
-    }
-
-    const measure = () => {
-      const shapes = measureColumns(columnCount);
-      const naturals = shapes.map((shape) =>
-        shape.cards > 0 ? shape.content + (shape.cards - 1) * CARD_GAP_PX : 0,
-      );
-      const tallest = Math.max(0, ...naturals);
-      if (tallest <= 0) return;
-
-      // Every copy of every column is given this exact height, so all columns
-      // share one wrap distance and none shows a seam. Rounded up to a whole
-      // pixel: content heights are fractional, and padding each column out
-      // with a fractional margin instead let the columns drift a pixel apart.
-      const next = Math.ceil(tallest) + CARD_GAP_PX;
-      periodRef.current = next;
-
-      // Written straight to the DOM rather than held in state. While an
-      // arrival slot is opening this fires every frame, and re-rendering a
-      // hundred cards per frame just to change one number is not affordable.
-      track.style.setProperty("--nd-period", `${next}px`);
-
-      // A column shorter than the period is stretched by widening its own
-      // gaps, rather than by redistributing across every column, so a card
-      // landing in one column never moves the cards in any other: a column
-      // whose shape (card count, measured content) hasn't changed since its
-      // gap was last set keeps that exact value, even though the period grew
-      // out from under it. The trade-off is that an untouched column can be
-      // left with extra blank space before the next copy starts, since its
-      // frozen gap no longer necessarily reaches the new period - accepted
-      // deliberately in exchange for every other column staying visually
-      // still. Floored to a whole pixel so a column can never overflow its
-      // copy and collide with the one below.
-      //
-      // Held still while an arrival is in flight regardless of shape. The slot
-      // grows the period by a whole card over its 780ms; recomputing even the
-      // target column's own gap mid-flight would fight the slot's own
-      // grid-rows animation. It's recomputed once, after the slot is torn down.
-      if (!arrivalInFlight) {
-        const previous = lastShapes.current;
-        shapes.forEach((shape, index) => {
-          const before = previous?.[index];
-          const unchanged =
-            before &&
-            before.cards === shape.cards &&
-            // Sub-pixel tolerance: layout measurement can wobble by a
-            // fraction of a pixel between calls with nothing actually having
-            // changed, which would otherwise defeat the comparison.
-            Math.abs(before.content - shape.content) < 0.5;
-          if (unchanged) return;
-
-          const column = columnRefs.current[index];
-          if (!column) return;
-          const gapCount = shape.cards - 1;
-          const gap =
-            gapCount > 0
-              ? Math.max(
-                  CARD_GAP_PX,
-                  Math.floor((next - CARD_GAP_PX - shape.content) / gapCount),
-                )
-              : CARD_GAP_PX;
-          column.style.setProperty("--nd-col-gap", `${gap}px`);
-        });
-        lastShapes.current = shapes;
-      }
-
-      // Enough copies that a full viewport still sits below the wrap point.
-      const needed = Math.max(2, Math.ceil(window.innerHeight / next) + 1);
-      setCopies((previous) => (previous === needed ? previous : needed));
-    };
-
-    measure();
-
-    const observer = new ResizeObserver(measure);
-    firstCopyRefs.current
-      .slice(0, columnCount)
-      .forEach((el) => el && observer.observe(el));
-    window.addEventListener("resize", measure, { passive: true });
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [wantsLoop, columnCount, items, arrivalInFlight, measureColumns]);
-
-  useWallLoop({ enabled: wantsLoop, kiosk, trackRef, periodRef });
-
+  useCursorIdle(kiosk);
   useEffect(() => clearConfetti, []);
+
+  // Wraps every column, purely so pickLandingSpot can search across all of
+  // them without needing a ref into each individual WallColumn.
+  const rowRef = useRef<HTMLDivElement>(null);
 
   /* --------------------------------------------------------------- arrivals */
 
   /**
    * Picks a card the viewer can actually see and drops the newcomer in above
    * it, so the gap opens on screen rather than somewhere off the top.
-   *
-   * The column itself is chosen by a one-step look-ahead rather than simply
-   * "whichever visible column is shortest right now": that greedy rule still
-   * let a column of many short cards get picked over and over, since low
-   * total content doesn't mean few gaps to spread the next round of slack
-   * across. Simulating the gap each candidate would actually produce - and
-   * picking whichever leaves the smallest *worst* gap across the whole wall -
-   * accounts for both at once.
    */
   const pickLandingSpot = useCallback((): {
     column: number;
     beforeId: string | null;
   } => {
-    const track = trackRef.current;
-    if (!track) return { column: 0, beforeId: null };
+    const row = rowRef.current;
+    if (!row) return { column: 0, beforeId: null };
 
     // Any card that overlaps the safe reading band qualifies - it doesn't
     // need to fit inside it whole. Requiring full containment excluded every
     // card taller than the band from ever being a candidate, which meant
     // whichever column happened to hold the tallest cards could never be
-    // picked as a landing spot even when it was the shortest overall, and
-    // grew steadily further behind with every arrival.
-    const candidates = [...track.querySelectorAll<HTMLElement>("[data-card-id]")]
+    // picked as a landing spot even when it was the shortest overall.
+    const candidates = [...row.querySelectorAll<HTMLElement>("[data-card-id]")]
       .map((el) => ({
         id: el.dataset.cardId ?? "",
         column: Number(el.dataset.column ?? 0),
@@ -262,17 +107,22 @@ export default function WallClient({
     // Among the columns the viewer can see, favour the one with the least
     // total content - the same rule the initial packer uses, so an arrival
     // balances the wall the same way loading it in the first place does.
-    const shapes = measureColumns(columnCount);
+    // Estimated rather than measured from the DOM: each column now manages
+    // its own layout privately, so this is the same heuristic the packer
+    // itself trusts for the same decision.
+    const contentByColumn = columns.map((column) =>
+      column.reduce((total, item) => total + estimateHeight(item), 0),
+    );
     const shortest = candidates.reduce((best, candidate) => {
-      const height = shapes[candidate.column]?.content ?? Infinity;
-      const bestHeight = shapes[best]?.content ?? Infinity;
+      const height = contentByColumn[candidate.column] ?? Infinity;
+      const bestHeight = contentByColumn[best] ?? Infinity;
       return height < bestHeight ? candidate.column : best;
     }, candidates[0]!.column);
 
     const inColumn = candidates.filter((c) => c.column === shortest);
     const pick = inColumn[Math.floor(Math.random() * inColumn.length)]!;
     return { column: pick.column, beforeId: pick.id };
-  }, [columnCount, measureColumns]);
+  }, [columns]);
 
   const insertItem = useCallback(
     (item: Opportunity, beforeId: string | null) => {
@@ -282,7 +132,7 @@ export default function WallClient({
           : 0;
         const next = [...previous];
         next.splice(index < 0 ? 0 : index, 0, item);
-        // Keep the wall bounded: every extra card lengthens the loop.
+        // Keep the wall bounded: every extra card lengthens its column's loop.
         return next.slice(0, WALL_MAX_ITEMS);
       });
     },
@@ -448,95 +298,35 @@ export default function WallClient({
       {liveError && (
         <p
           role="status"
-          className="nd-container-wide mb-4 text-[13px] text-nd-muted"
+          className="mb-2 shrink-0 text-[13px] text-nd-muted"
         >
           Live updates are paused — we will reconnect automatically.
         </p>
       )}
 
       <div
-        ref={trackRef}
-        className="flex items-start gap-4 xl:gap-5"
-        // Scroll anchoring tries to keep a reference element steady when
-        // content shifts, and nudges the position by a few pixels right after
-        // the loop's programmatic jump. That reads as jitter at the seam.
-        style={{ overflowAnchor: "none" }}
-        data-reveal={revealActive ? "on" : undefined}
+        ref={rowRef}
+        className="flex min-h-0 flex-1 items-stretch justify-center gap-4 overflow-hidden xl:gap-5"
       >
-        {columns.map((column, columnIndex) => (
-          <div
-            key={columnIndex}
-            ref={(el) => {
-              columnRefs.current[columnIndex] = el;
-            }}
-            className="flex min-w-0 flex-1 flex-col"
-          >
-            {Array.from({ length: copies }, (_, copyIndex) => (
-              <div
-                key={copyIndex}
-                // Fixed to the shared period. The slack below each column's
-                // cards is empty space, so the wrap lands on identical pixels.
-                style={{ height: "var(--nd-period, auto)", flexShrink: 0 }}
-                // Copies past the first are visual filler for the loop. inert
-                // keeps them out of the tab order and the accessibility tree,
-                // so nothing is announced or focused twice.
-                inert={copyIndex > 0}
-              >
-                <div
-                  ref={
-                    copyIndex === 0
-                      ? (el) => {
-                          firstCopyRefs.current[columnIndex] = el;
-                        }
-                      : undefined
-                  }
-                  // --nd-col-gap is inherited from the column wrapper: a column
-                  // packed short gets a wider gap so it fills the period
-                  // exactly rather than ending in a void.
-                  className="nd-column-stack"
-                >
-                  {column.map((item) => {
-                    const inSlot = slotId === item.id;
-                    const skipReveal = inSlot || settled.has(item.id);
-
-                    const card = (
-                      <OpportunityCard
-                        opportunity={item}
-                        variant="wall"
-                        onOpen={copyIndex === 0 ? setSelected : undefined}
-                        arrived={arrived.has(item.id)}
-                        className={inSlot ? "nd-slot-card" : undefined}
-                      />
-                    );
-
-                    return (
-                      <div
-                        key={`${item.id}-${copyIndex}`}
-                        ref={skipReveal ? undefined : revealRef}
-                        className={skipReveal ? undefined : "nd-reveal"}
-                        data-card-id={item.id}
-                        data-column={columnIndex}
-                      >
-                        {inSlot ? (
-                          <div
-                            className="nd-slot"
-                            data-arrival-slot={item.id}
-                            data-open={slotOpen}
-                            data-landed={landed}
-                          >
-                            <div>{card}</div>
-                          </div>
-                        ) : (
-                          card
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
+        {columns.map((columnItems, columnIndex) => {
+          const inThisColumn =
+            slotId !== null && pinned.get(slotId) === columnIndex;
+          return (
+            <WallColumn
+              key={columnIndex}
+              columnIndex={columnIndex}
+              items={columnItems}
+              reducedMotion={reducedMotion}
+              revealActive={revealActive}
+              onOpen={setSelected}
+              arrived={arrived}
+              slotId={inThisColumn ? slotId : null}
+              slotOpen={slotOpen}
+              landed={landed}
+              settled={settled}
+            />
+          );
+        })}
       </div>
 
       {arrival && (

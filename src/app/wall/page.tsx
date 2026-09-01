@@ -52,20 +52,20 @@ export default async function WallPage({ searchParams }: Props) {
   const { items } = feed.data;
 
   return (
-    <>
+    <div className="flex h-dvh flex-col overflow-hidden">
       <a href="#main" className="nd-sr-only nd-skip-link">
         Skip to the wall
       </a>
 
       {/* Kiosk mode hides all navigation chrome for the unattended screen.
-          Sticky because the wall auto-scrolls continuously - a header that
-          scrolled with the page would leave within a few seconds and never
-          come back. */}
-      {!kiosk && <SiteHeader active="wall" size="display" sticky />}
+          Each column now scrolls itself independently, so the page as a
+          whole never scrolls - the header just sits at the top of this
+          fixed-height column rather than needing to stay pinned there. */}
+      {!kiosk && <SiteHeader active="wall" size="display" />}
 
       <main
         id="main"
-        className="nd-container-wide pb-24 pt-6 md:pt-10"
+        className="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-4 sm:px-6 md:pt-6"
         aria-label="Opportunity wall"
       >
         {items.length === 0 ? (
@@ -80,7 +80,9 @@ export default async function WallPage({ searchParams }: Props) {
         )}
       </main>
 
-      {!kiosk && <SiteFooter wide />}
-    </>
+      {/* No footer here: with the page fixed to the viewport height and
+          never scrolling, it would never be reachable. Contact details live
+          on /board and /board/new. */}
+    </div>
   );
 }

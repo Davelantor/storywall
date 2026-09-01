@@ -13,7 +13,7 @@ Dark theme only — that is the brand.
 
 | Route           | Purpose                                                        |
 | --------------- | -------------------------------------------------------------- |
-| `/wall`         | Venue display. Masonry waterfall that scrolls in a seamless loop |
+| `/wall`         | Venue display. Independent columns, each looping seamlessly       |
 | `/wall?kiosk=1` | Same, minus the chrome, plus pointer hiding                     |
 | `/board`        | Practical feed: search, filters, sort, submission form          |
 | `/board/new`    | Standalone submission page (the QR code points here)            |
@@ -76,83 +76,90 @@ moderator edits. Do not add a second one.
 
 ### The wall
 
-`WallClient.tsx` + `wall-hooks.ts` carry most of the complexity. Read this
-before touching either.
+`WallClient.tsx` orchestrates state (items, arrivals, debug shortcuts, the
+live poll); `WallColumn.tsx` + `wall-hooks.ts` own the actual scrolling. Read
+this before touching any of them.
 
-**Seamless loop.** Each column renders N identical copies, every copy forced to
-the same integer height — the *period*. Scrolling one period past the top of
-the track shows pixels identical to one period earlier, so subtracting the
-period from `scrollY` is invisible. The wrap runs on manual scrolling too.
+**Columns are fully independent.** Each `WallColumn` is its own scroll
+container — own `scrollTop`, own loop period, own hover-pause — capped to
+`max-width: 520px` (`.nd-wall-column`) so the wall reads as a row of separate
+tickers rather than one wide masonry block. There is **no state shared
+between columns at all**: no shared period, no shared scroll position, no
+cross-column gap redistribution. This is deliberate, and the reason it's
+built this way: a card landing in one column cannot move a single card in
+another, because there is nothing left connecting them to move. (An earlier
+design shared one `window.scrollY` and one period across all columns, which
+needed increasingly elaborate machinery - frozen gaps, scroll compensation
+math - just to stop an insertion in one column from visibly shifting every
+other one. That machinery is gone; the independence makes it unnecessary.)
+The page itself does not scroll on `/wall` - `wall/page.tsx` fixes the whole
+layout to `h-dvh`, header at the top, the row of columns filling the rest.
+
+**Seamless loop, per column.** Each `WallColumn` renders N identical copies of
+its own item list, every copy forced to the same integer height - that
+column's own *period*. Scrolling one period past the top shows pixels
+identical to one period earlier, so subtracting the period from the column's
+own `scrollTop` is invisible. The wrap runs on manual scrolling (wheel/touch
+inside that column) too.
 
 Invariants that keep the seam invisible — break any and it visibly jitters:
 
-- **Copy heights must be an exact integer.** Padding columns out with a
-  fractional `margin-bottom` let them drift a pixel apart. Each copy gets an
-  explicit `height` instead.
-- **The period is a CSS variable (`--nd-period`), not React state.** While an
-  arrival gap opens, the ResizeObserver fires every frame; re-rendering a
-  hundred cards per frame to change one number is not affordable.
-- **`overflow-anchor: none` on the track.** Scroll anchoring nudges the
+- **Copy heights must be an exact integer.** A fractional period lets the
+  copies drift a pixel apart. Each copy gets an explicit `height` instead.
+- **The period is a CSS variable (`--nd-period`) on the column, not React
+  state.** While this column's own arrival slot is open the ResizeObserver
+  fires every frame; re-rendering a hundred cards per frame to change one
+  number is not affordable.
+- **`overflow-anchor: none` on the column.** Scroll anchoring nudges the
   position a few pixels after the programmatic jump.
-- **Wrap threshold uses `offsetTop`, not `getBoundingClientRect()`.** The rect
-  is fractional and scroll-relative, and made the threshold wobble.
+- **Measurement uses `el.scrollTop`, not the window.** Each column scrolls
+  itself; there is no page-level `scrollY` or `offsetTop` walk involved at all.
+- **A column's own arrival slot freezes its own measurement**
+  (`arrivalInFlight` in `WallColumn`) while the slot's `grid-template-rows`
+  animation is changing this column's height every frame - recomputed once,
+  after the slot is torn down. This no longer has any effect beyond the one
+  column, since nothing reads across columns any more.
 
-Verify periodicity after any change by measuring every card's offset against
-its twin one copy down: there must be exactly **one** distinct delta.
+Verify periodicity after any change by measuring every card's `offsetTop`
+(not `getBoundingClientRect()` - it's scroll-relative and drifts mid-script)
+against its twin one copy down, *within that column*: there must be exactly
+**one** distinct delta per column.
 
-**Column slack.** The period is the *tallest* column, so every shorter column
-would otherwise stop early and leave a void — and the same void again at every
-copy boundary, because the slack repeats. Each column instead spreads its own
-slack across its own card gaps (`--nd-col-gap` on the column wrapper, consumed
-by `.nd-column-stack`), so it fills the period exactly. Two consequences:
+**Column balance.** `useMasonryColumns` (wall-hooks.ts) still packs items
+across columns so they *look* reasonably even - each new item goes to
+whichever column currently holds the least estimated content
+(`estimateHeight()`, cheap and text-length-based). This no longer has
+anything to do with the loop being seamless (each column's period is simply
+whatever its own content adds up to); it only affects how balanced the
+columns look next to each other. A column left shorter than its neighbours
+just runs a shorter loop cycle, not a gap.
 
-- **Measure card heights, never the container.** The container's height depends
-  on the gap we are about to set from it. `measureColumns()` sums the children.
-- **The distribution is frozen while an arrival is in flight.** The opening slot
-  grows the period by a whole card over its 780ms; redistributing that every
-  frame would pull every other column apart in sympathy. It is recomputed once,
-  after the slot is torn down, and `.nd-column-stack` transitions the change.
-- **A column whose shape hasn't changed keeps its exact gap.** `lastShapes`
-  remembers each column's card count and measured content from the last time
-  its gap was set; WallClient only rewrites `--nd-col-gap` for a column whose
-  shape differs from that. A card landing in one column would otherwise still
-  move every *other* column's cards too, since the shared period grew and the
-  old "redistribute across everyone" pass would re-spread the new slack over
-  the whole wall on every insertion. The untouched columns instead simply stop
-  reaching the new period exactly - the slack becomes blank space after their
-  last card, before the next copy starts, rather than being smoothed away.
-  That's an accepted trade: visual stability in the columns nothing was added
-  to, over a perfectly filled period in all of them. Reset to `null` (forcing
-  every column to recompute) whenever the column count changes, since the
-  indices no longer refer to the same columns at all.
+`pickLandingSpot()` in `WallClient` picks an arrival's column the same way:
+whichever on-screen column currently holds the least estimated content, among
+cards the viewer can actually see (so the gap opens somewhere visible). It
+uses the *estimated* per-column totals from the `columns` packing, not a DOM
+measurement - each column's real layout is now private to that `WallColumn`
+instance, so `WallClient` has no ref into it to measure directly, and doesn't
+need one.
 
-`pickLandingSpot()` therefore favours whichever on-screen column currently
-holds the *least total content* — the same rule the initial packer in
-`useMasonryColumns` uses for every card, arrival or not, so a wide venue
-display with many columns and few cards each starts balanced rather than
-needing arrivals to correct it later. A one-step look-ahead that simulated the
-per-card gap each candidate would leave the *whole wall* needing was tried
-instead and made things worse: comparing a candidate against a column that has
-already run ahead makes every other choice look artificially catastrophic by
-comparison, since it is being measured against a period that column's own past
-growth set — so the metric kept recommending the already-largest column and
-the imbalance fed on itself. Comparing plain current totals doesn't have that
-feedback loop, because every candidate is measured against the same today.
-Verify by rehearsing eight-plus arrivals in a row (numpad **+** held or
-repeated) and confirming card counts across columns stay within one of each
-other, and by resizing to a wide viewport (more columns, fewer cards each) and
-confirming no column sits meaningfully shorter than its neighbours.
+**Auto-scroll.** Always on (not just kiosk), ~26px/s, per column. Exactly one
+rule governs whether a given column is moving: it scrolls whenever the
+pointer is not resting on one of *its own* cards, and stops the instant it
+is — no delay in either direction, and nothing else (a click, a keypress, a
+wheel nudge) holds it still or wakes it. Hovering a card in one column has no
+effect on any other. An arrival landing does not pause its column either —
+the whole point of the entrance is that it plays out against a wall that
+keeps moving. Kiosk's cursor-hiding (`useCursorIdle`) runs on its own
+independent, page-level idle clock and has no bearing on whether any column
+is scrolling. There is deliberately no keyboard-focus equivalent of
+hover-pause, so a keyboard user tabbing through cards does not get one held
+still to read — flag this if it comes up.
 
-**Auto-scroll.** Always on (not just kiosk), ~26px/s. Exactly one rule governs
-it: the wall scrolls whenever the pointer is not resting on a card, and stops
-the instant it is — no delay in either direction, and nothing else (a click, a
-keypress, a wheel nudge) holds it still or wakes it. An arrival landing does
-not pause it either — the whole point of the entrance is that it plays out
-against a wall that keeps moving. Kiosk's cursor-hiding runs on its own
-independent idle clock (`CURSOR_IDLE_MS`, any activity wakes it) and has no
-bearing on whether the wall is scrolling. There is deliberately no
-keyboard-focus equivalent of hover-pause, so a keyboard user tabbing through
-cards does not get one held still to read — flag this if it comes up.
+**Reduced motion.** `WallColumn` renders a single copy and switches its own
+`overflow-y` from `hidden` to `auto`: without a loop there is only the one
+real copy, so it needs to be an ordinary, manually-scrollable list rather
+than content clipped behind a fixed-height box with nothing bringing the rest
+of it into view.
 
 **Arrivals.** New posts from the 20s poll go into a **queue**, not straight onto
 the wall. One is released at a time (`ARRIVAL_SPACING_MS`) and plays a
@@ -223,8 +230,10 @@ always; in production only with `?debug=1`.
   the script; never hand-edit the SQL.
 - **The wall is capped at `WALL_MAX_ITEMS` (100).** It loads the whole set up
   front because a loop needs finite content — there is no pagination on `/wall`.
-- **The footer is unreachable on `/wall`.** The loop wraps before it. Contact
-  details live on `/board` and `/board/new`.
+- **There is no footer on `/wall`.** The page is fixed to the viewport height
+  (`h-dvh`) and never scrolls - each column scrolls itself instead - so a
+  footer below the fold would never be reachable. It was removed rather than
+  left in as dead markup. Contact details live on `/board` and `/board/new`.
 - **Framing is intentional.** `frame-ancestors *` and no `X-Frame-Options`, so
   the wall can be embedded. Nothing may touch `window.top` or `window.parent`.
 - Field limits (`FIELD_LIMITS` in `src/lib/types.ts`) are enforced in three

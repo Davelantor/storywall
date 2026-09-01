@@ -10,7 +10,7 @@ NORDEEP team before it appears.
 
 | Route        | What it is                                                              |
 | ------------ | ----------------------------------------------------------------------- |
-| `/wall`      | The venue display: masonry waterfall that scrolls in a seamless loop   |
+| `/wall`      | The venue display: independent columns, each scrolling in a seamless loop |
 | `/wall?kiosk=1` | Same, with the chrome hidden and the pointer hidden when idle        |
 | `/board`     | The practical feed: search, filters, sort, submission modal             |
 | `/board/new` | Standalone submission form (this is what the QR code points at)         |
@@ -151,12 +151,13 @@ client code touches `window.top` or `window.parent`.
 Notes for embedding:
 
 - Use `/board` instead if you want the searchable feed rather than the display wall.
-- Add `?kiosk=1` to drop the header, footer and view toggle — useful when the
-  host page already provides its own navigation.
-- The masonry column count follows the **iframe's** width, not the host page's,
-  so a narrow embed correctly falls back to one or two columns.
-- Give the iframe real height. The page scrolls internally; it does not resize
-  its frame, and it never forces horizontal scroll on the host.
+- Add `?kiosk=1` to drop the header and view toggle — useful when the host
+  page already provides its own navigation.
+- The column count follows the **iframe's** width, not the host page's, so a
+  narrow embed correctly falls back to one or two columns.
+- Give the iframe real height. The page is fixed to that height and never
+  scrolls itself — each column scrolls internally instead — and it never
+  forces horizontal scroll on the host.
 
 To restrict who may embed it, replace the wildcard in `next.config.ts`:
 
@@ -168,32 +169,34 @@ To restrict who may embed it, replace the wildcard in `next.config.ts`:
 
 ## The wall
 
-`/wall` is the showpiece. It scrolls itself continuously and loops without a
-visible seam: each column renders several identical copies, and once the page
-has scrolled one full period the position simply jumps back by exactly that
-period — onto pixels that are identical, so nothing is seen. Manual scrolling
-wraps the same way, which makes it endless in both directions.
+`/wall` is the showpiece: a row of independent columns, each scrolling and
+looping entirely on its own. The page itself never scrolls — it fills the
+screen height exactly, header at the top, and each column is its own little
+ticker beneath it, capped to 520px wide so the wall reads as a set of
+separate columns rather than one wide block.
+
+Each column loops without a visible seam: it renders several identical copies
+of its own card list, and once it has scrolled one full copy's height, its
+position simply jumps back by that same amount — onto pixels that are
+identical, so nothing is seen. Manual scrolling (wheel or touch inside a
+column) wraps the same way, which makes it endless in both directions.
+Because columns are independent, this all happens per column: one column's
+loop length has nothing to do with any other's, and a card added to one
+column never affects what any other column is doing.
 
 Because a loop needs finite, repeating content, `/wall` loads the most recent
-**100 approved posts** up front rather than paging. Two consequences worth
-knowing:
+**100 approved posts** up front rather than paging. Posts beyond the
+hundredth do not reach the wall — they are all still on the Board, which
+pages normally. There is no footer on `/wall`: with the page fixed to the
+screen and never scrolling, one below the fold would never be reachable.
+Contact details live on `/board` and `/board/new`.
 
-- The footer is unreachable on `/wall` — the loop wraps before it. Contact
-  details live on `/board` and `/board/new`.
-- Posts beyond the hundredth do not reach the wall. They are all still on the
-  Board, which pages normally.
-
-All columns share that one period, so a column holding slightly less content
-than the tallest one would end early and leave a black void — and the same void
-again at every copy boundary. Rather than let that happen, each column spreads
-the difference across the gaps between its own cards, so it fills the period
-exactly. A column carrying one card fewer than its neighbours simply sits a
-little more airily; nothing stops short.
-
-**Auto-scroll** runs at about 26px/s. It stops while the pointer is resting on
-a card, so anything can be read simply by pointing at it, and resumes a second
-after the pointer leaves. Deliberate gestures — scrolling, typing, tapping —
-hold it for ten seconds instead.
+**Auto-scroll** runs at about 26px/s, independently in every column. A column
+stops while the pointer is resting on one of its cards, so anything can be
+read simply by pointing at it, and resumes the instant the pointer leaves —
+no delay either way. Hovering a card in one column has no effect on any
+other. Nothing else — clicking, typing, a wheel nudge — pauses or wakes a
+column; hovering a card is the only thing that does.
 
 ### When a post is approved
 
@@ -212,8 +215,8 @@ arrive in turn rather than all at once.
 ### Kiosk mode
 
 Open `/wall?kiosk=1` full-screen (F11) on the display machine. It additionally
-hides the header, footer and view toggle, and hides the mouse pointer after
-three seconds of no input.
+hides the header and view toggle, and hides the mouse pointer after three
+seconds of no input.
 
 The "+ Post an Opportunity" pill and its QR code stay visible in both modes, so
 people can scan the submission form straight off the screen.
@@ -231,9 +234,9 @@ in development; on a deployed build, add `?debug=1`.
 ### Reduced motion
 
 If the operating system requests reduced motion, all of it is disabled — the
-loop, the auto-scroll, the arrival flight and the confetti. The wall renders a
-single copy and behaves as an ordinary page. Use a display machine that does
-not have "reduce motion" enabled.
+loop, the auto-scroll, the arrival flight and the confetti. Each column
+renders a single copy and becomes an ordinary, manually-scrollable list. Use
+a display machine that does not have "reduce motion" enabled.
 
 ## Design
 
@@ -284,8 +287,9 @@ src/
     globals.css              brand tokens and component classes
     opengraph-image.tsx      generated LinkedIn/social preview card
   components/
-    WallClient.tsx           loop, arrival queue, live polling, kiosk
-    wall-hooks.ts            column count, masonry packing, reveal, scroll loop
+    WallClient.tsx           state: items, arrival queue, live polling, kiosk
+    WallColumn.tsx           one independently-scrolling column - own loop, own hover-pause
+    wall-hooks.ts            column count, masonry packing, reveal, per-column scroll loop
     ArrivalFlight.tsx        slide in → hold centre stage → settle into the gap
     BoardClient.tsx          search, filters, sort, URL sync, submission modal
     OpportunityCard.tsx      the card; wall and board variants differ on purpose

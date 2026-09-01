@@ -40,7 +40,10 @@ export function useReducedMotion(): boolean {
 /* ==========================================================================
    Responsive column count
    --------------------------------------------------------------------------
-   1 on mobile, 2 on tablet, 3-4 on desktop, 5-6 on a venue display.
+   1 on mobile, 2 on tablet, 3-4 on desktop, 5-6 on a venue display. Each
+   column is independently max-width:520px (see WallColumn / .nd-wall-column),
+   so this decides how many of them to render, not how wide any one is - the
+   row centres itself when the columns don't need the full viewport width.
    ========================================================================== */
 
 const BREAKPOINTS: Array<{ minWidth: number; columns: number }> = [
@@ -95,10 +98,12 @@ export function useColumnCount(itemCount: number): number {
    Cards are packed into the column that leaves the wall best balanced, rather
    than laid out round-robin - which is what produces the uneven,
    storyboard-like waterfall. Height is estimated from content length: cheap,
-   deterministic, and good enough because we never force equal heights on the
-   wall itself. The loop period does force equal heights on the copies below
-   it, though (see WallClient), which is what makes packing quality matter:
-   a lopsided assignment shows up there as a visible gap.
+   deterministic, and good enough because columns are never forced to equal
+   heights - each column's own loop period (see WallColumn) is simply
+   whatever its own content adds up to. Packing quality only affects how even
+   the columns *look* next to each other, not the loop itself; a column left
+   noticeably taller or shorter than its neighbours just runs a longer or
+   shorter cycle.
    ========================================================================== */
 
 export function estimateHeight(item: Opportunity): number {
@@ -117,9 +122,8 @@ export function estimateHeight(item: Opportunity): number {
 
 /**
  * Vertical gap between cards, and between the last card of one copy and the
- * first of the next. Fixed rather than responsive so the loop period is
- * exact. A column packed short widens its own gap from here to fill the
- * period - see `--nd-col-gap` / `.nd-column-stack` in WallClient.
+ * first of the next. Fixed rather than responsive so each column's own loop
+ * period is exact - see `.nd-column-stack` in WallColumn.
  */
 export const CARD_GAP_PX = 20;
 
@@ -130,7 +134,8 @@ export const CARD_GAP_PX = 20;
  * the moment a wide screen like a venue display, with many more columns and
  * so far fewer cards in each, needs the best packing it can get: with only a
  * handful of cards per column, one bad assignment is a much larger fraction
- * of that column's content, and shows up as a proportionally larger gap.
+ * of that column's content, and shows up as a visibly longer or shorter loop
+ * cycle next to its neighbours.
  *
  * Each item goes into whichever column currently holds the least total
  * content. A fancier one-step look-ahead - simulating the per-card gap each
@@ -291,77 +296,61 @@ export function useRevealObserver(enabled: boolean) {
 }
 
 /* ==========================================================================
-   Seamless loop
+   Per-column seamless loop
    --------------------------------------------------------------------------
-   The wall scrolls itself continuously and wraps without a visible seam.
+   Every column is its own independent scroll container - own scrollTop, own
+   period, own hover-pause - rather than the whole wall sharing one window
+   scroll and one period. There is no state shared between columns at all, so
+   a card landing in one can never move the cards in another: there is
+   nothing left for it to move.
 
-   How the seam is avoided: WallClient stacks N identical copies of the card
-   set, and pads every column so each copy occupies exactly the same vertical
-   period P. Once the page has scrolled one full period past the top of the
-   track, the pixels on screen are identical to those one period earlier, so
-   subtracting P from scrollY is invisible. The wrap runs on manual scrolling
-   too, which is what makes it endless rather than merely automatic.
+   How the seam is avoided: WallColumn stacks N identical copies of its own
+   card list, each forced to the same integer height - its own period P.
+   Once the column has scrolled one full period, the pixels on screen are
+   identical to those one period earlier, so subtracting P from its own
+   scrollTop is invisible. The wrap runs on manual scrolling too, which is
+   what makes it endless in both directions rather than merely automatic.
 
-   Exactly one rule governs whether the wall is moving: it scrolls whenever
-   the pointer is not resting on a card, and stops the instant it is - no
-   delay either way, and nothing else (a click, a keypress, a wheel nudge)
-   holds it still or wakes it. Disabled outright when the viewer prefers
-   reduced motion - in which case WallClient renders a single copy and the
-   page behaves normally.
+   Exactly one rule governs whether a column is moving: it scrolls whenever
+   the pointer is not resting on one of its own cards, and stops the instant
+   it is - no delay either way, and nothing else (a click, a keypress, a
+   wheel nudge) holds it still or wakes it. Hovering a card in one column has
+   no effect on any other. Disabled outright when the viewer prefers reduced
+   motion - in which case WallColumn renders a single copy and behaves like
+   ordinary static content.
    ========================================================================== */
 
-const CURSOR_IDLE_MS = 3000;
 const PIXELS_PER_SECOND = 26;
 
-export type WallLoopState = { scrolling: boolean; cursorHidden: boolean };
-
-export function useWallLoop({
+export function useColumnLoop({
   enabled,
-  kiosk,
-  trackRef,
+  containerRef,
   periodRef,
 }: {
   /** False when reduced motion is requested or the period is not measured yet. */
   enabled: boolean;
-  /** Kiosk additionally hides the pointer once the screen is idle. */
-  kiosk: boolean;
-  trackRef: React.RefObject<HTMLElement | null>;
+  containerRef: React.RefObject<HTMLElement | null>;
   periodRef: React.RefObject<number>;
-}): WallLoopState {
+}): boolean {
   const [scrolling, setScrolling] = useState(false);
-  const [cursorHidden, setCursorHidden] = useState(false);
 
-  // For cursor-hiding only (kiosk mode) - unrelated to whether the wall moves.
-  const lastInteraction = useRef(Date.now());
-
-  // Hovering a card holds the wall still so it can be read. A ref rather than
-  // state: it's read straight from the pointer handlers below with no delay,
-  // so there's nothing an idle tick needs to reconcile it against.
+  // Read straight from the pointer handlers below with no delay, so there is
+  // nothing an idle tick needs to reconcile it against.
   const hovering = useRef(false);
 
-  /** Subtracts one whole period once we are far enough in for it to be invisible. */
+  /** Subtracts one whole period once scrolled far enough for it to be invisible. */
   const wrap = useCallback(() => {
+    const el = containerRef.current;
     const period = periodRef.current;
-    const track = trackRef.current;
-    if (!track || period <= 0) return;
+    if (!el || period <= 0) return;
+    if (el.scrollTop >= period) el.scrollTop -= period;
+  }, [containerRef, periodRef]);
 
-    // Walk offsetTop rather than using getBoundingClientRect: the rect is
-    // fractional and scroll-relative, which made the threshold wobble by a
-    // pixel between calls. offsetTop is layout-absolute and stable.
-    let trackTop = 0;
-    for (let node: HTMLElement | null = track; node; node = node.offsetParent as HTMLElement | null) {
-      trackTop += node.offsetTop;
-    }
-
-    if (window.scrollY >= trackTop + period) {
-      window.scrollTo({ top: window.scrollY - period, behavior: "auto" });
-    }
-  }, [periodRef, trackRef]);
-
-  // Wrap on manual scrolling as well, so a person flicking down the wall keeps
-  // going rather than hitting the bottom of the last copy.
+  // Wrap on manual scrolling too (wheel/touch inside this column), so it is
+  // endless in both directions, not just under the auto-scroll.
   useEffect(() => {
-    if (!enabled) return;
+    const el = containerRef.current;
+    if (!el || !enabled) return;
     let queued = false;
     const onScroll = () => {
       if (queued) return;
@@ -371,43 +360,14 @@ export function useWallLoop({
         wrap();
       });
     };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [enabled, wrap]);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [enabled, wrap, containerRef]);
 
-  // Cursor visibility only (kiosk mode) - any activity wakes the pointer, and
-  // it hides again after CURSOR_IDLE_MS of quiet. This has no bearing on
-  // whether the wall is scrolling; that's governed entirely by hover, below.
+  // The one rule, scoped to this column's own container only.
   useEffect(() => {
-    if (!kiosk) return;
-
-    const wake = () => {
-      lastInteraction.current = Date.now();
-      setCursorHidden(false);
-    };
-
-    const events: Array<keyof WindowEventMap> = [
-      "mousemove",
-      "mousedown",
-      "wheel",
-      "touchstart",
-      "touchmove",
-      "keydown",
-    ];
-    for (const name of events) window.addEventListener(name, wake, { passive: true });
-    return () => {
-      for (const name of events) window.removeEventListener(name, wake);
-    };
-  }, [kiosk]);
-
-  // The one rule: scrolling stops the instant the pointer rests on a card,
-  // and resumes the instant it leaves - no delay in either direction, and
-  // nothing else (a click, a keypress, a wheel nudge) affects it. Delegated
-  // on the track so it covers every card including the duplicated copies, and
-  // keeps working as cards come and go.
-  useEffect(() => {
-    const track = trackRef.current;
-    if (!track || !enabled) {
+    const el = containerRef.current;
+    if (!el || !enabled) {
       setScrolling(false);
       return;
     }
@@ -432,33 +392,19 @@ export function useWallLoop({
     hovering.current = false;
     setScrolling(true);
 
-    track.addEventListener("pointerover", onOver);
-    track.addEventListener("pointerout", onOut);
+    el.addEventListener("pointerover", onOver);
+    el.addEventListener("pointerout", onOut);
     return () => {
-      track.removeEventListener("pointerover", onOver);
-      track.removeEventListener("pointerout", onOut);
+      el.removeEventListener("pointerover", onOver);
+      el.removeEventListener("pointerout", onOut);
     };
-  }, [enabled, trackRef]);
-
-  // Cursor-hide idle clock (kiosk only) - independent of the scroll rule above.
-  useEffect(() => {
-    if (!kiosk) {
-      setCursorHidden(false);
-      return;
-    }
-
-    const tick = () => {
-      setCursorHidden(Date.now() - lastInteraction.current > CURSOR_IDLE_MS);
-    };
-
-    tick();
-    const id = window.setInterval(tick, 150);
-    return () => window.clearInterval(id);
-  }, [kiosk]);
+  }, [enabled, containerRef]);
 
   // The scroll loop.
   useEffect(() => {
     if (!enabled || !scrolling) return;
+    const el = containerRef.current;
+    if (!el) return;
 
     let frame = 0;
     let previous = performance.now();
@@ -472,7 +418,7 @@ export function useWallLoop({
       const whole = Math.floor(carry);
       if (whole > 0) {
         carry -= whole;
-        window.scrollBy(0, whole);
+        el.scrollTop += whole;
         wrap();
       }
 
@@ -481,15 +427,59 @@ export function useWallLoop({
 
     frame = window.requestAnimationFrame(step);
     return () => window.cancelAnimationFrame(frame);
-  }, [enabled, scrolling, wrap]);
+  }, [enabled, scrolling, wrap, containerRef]);
 
-  // Pointer hiding for the unattended screen.
+  return scrolling;
+}
+
+/**
+ * Kiosk-only cursor hiding: any activity anywhere on the page wakes the
+ * pointer, and it hides again after CURSOR_IDLE_MS of quiet. Page-level and
+ * independent of any one column, unlike scrolling above.
+ */
+const CURSOR_IDLE_MS = 3000;
+
+export function useCursorIdle(kiosk: boolean): void {
+  const [cursorHidden, setCursorHidden] = useState(false);
+  const lastInteraction = useRef(Date.now());
+
+  useEffect(() => {
+    if (!kiosk) {
+      setCursorHidden(false);
+      return;
+    }
+
+    const wake = () => {
+      lastInteraction.current = Date.now();
+      setCursorHidden(false);
+    };
+
+    const events: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "wheel",
+      "touchstart",
+      "touchmove",
+      "keydown",
+    ];
+    for (const name of events) window.addEventListener(name, wake, { passive: true });
+
+    const tick = () => {
+      setCursorHidden(Date.now() - lastInteraction.current > CURSOR_IDLE_MS);
+    };
+    tick();
+    const id = window.setInterval(tick, 150);
+
+    return () => {
+      for (const name of events) window.removeEventListener(name, wake);
+      window.clearInterval(id);
+    };
+  }, [kiosk]);
+
   useEffect(() => {
     const root = document.documentElement;
     if (kiosk && cursorHidden) root.classList.add("nd-cursor-hidden");
     else root.classList.remove("nd-cursor-hidden");
     return () => root.classList.remove("nd-cursor-hidden");
   }, [kiosk, cursorHidden]);
-
-  return { scrolling, cursorHidden };
 }
