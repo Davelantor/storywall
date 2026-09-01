@@ -103,6 +103,12 @@ function estimateHeight(item: Opportunity): number {
 export function useMasonryColumns(
   items: Opportunity[],
   columnCount: number,
+  /**
+   * Column overrides by id. An arriving post is dropped next to a card the
+   * viewer can actually see, so its column is chosen by the arrival rather
+   * than by the shortest-column packer.
+   */
+  pinned?: Map<string, number>,
 ): Opportunity[][] {
   const assignment = useRef(new Map<string, number>());
   const heights = useRef<number[]>([]);
@@ -120,12 +126,20 @@ export function useMasonryColumns(
 
     for (const item of items) {
       if (assignment.current.has(item.id)) continue;
-      let shortest = 0;
-      for (let c = 1; c < columnCount; c += 1) {
-        if (heights.current[c]! < heights.current[shortest]!) shortest = c;
+
+      const forced = pinned?.get(item.id);
+      let target: number;
+      if (forced !== undefined) {
+        target = Math.max(0, Math.min(forced, columnCount - 1));
+      } else {
+        target = 0;
+        for (let c = 1; c < columnCount; c += 1) {
+          if (heights.current[c]! < heights.current[target]!) target = c;
+        }
       }
-      assignment.current.set(item.id, shortest);
-      heights.current[shortest] += estimateHeight(item);
+
+      assignment.current.set(item.id, target);
+      heights.current[target] += estimateHeight(item);
     }
 
     const columns: Opportunity[][] = Array.from(
@@ -137,7 +151,7 @@ export function useMasonryColumns(
       columns[Math.min(column, columnCount - 1)]!.push(item);
     }
     return columns;
-  }, [items, columnCount]);
+  }, [items, columnCount, pinned]);
 }
 
 /* ==========================================================================

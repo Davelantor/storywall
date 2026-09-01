@@ -10,8 +10,8 @@ NORDEEP team before it appears.
 
 | Route        | What it is                                                              |
 | ------------ | ----------------------------------------------------------------------- |
-| `/wall`      | The venue display: animated masonry waterfall, infinite scroll, live updates |
-| `/wall?kiosk=1` | Unattended screen mode: no chrome, hidden cursor, continuous auto-scroll |
+| `/wall`      | The venue display: masonry waterfall that scrolls in a seamless loop   |
+| `/wall?kiosk=1` | Same, with the chrome hidden and the pointer hidden when idle        |
 | `/board`     | The practical feed: search, filters, sort, submission modal             |
 | `/board/new` | Standalone submission form (this is what the QR code points at)         |
 | `/admin`     | Moderation queue — approve / reject / edit                              |
@@ -30,9 +30,8 @@ npm run dev
 
 Open <http://localhost:3000>. **No configuration is required to see it running.**
 Without Supabase credentials the app serves an in-memory demo store seeded with
-the 12 sample opportunities, and shows a "Demo data" banner so nobody mistakes it
-for production. Submissions and moderation work in demo mode but are lost when
-the server restarts.
+the 12 sample opportunities. Submissions and moderation work in demo mode but
+are lost when the server restarts, and `/admin` says so at the top of the queue.
 
 To exercise `/admin` locally, add an `.env.local`:
 
@@ -167,25 +166,67 @@ To restrict who may embed it, replace the wildcard in `next.config.ts`:
 
 ---
 
-## Running the venue screen
+## The wall
 
-Open `/wall?kiosk=1` full-screen (F11) on the display machine. Kiosk mode:
+`/wall` is the showpiece. It scrolls itself continuously and loops without a
+visible seam: each column renders several identical copies, and once the page
+has scrolled one full period the position simply jumps back by exactly that
+period — onto pixels that are identical, so nothing is seen. Manual scrolling
+wraps the same way, which makes it endless in both directions.
 
-- hides the header, footer and view toggle;
-- hides the mouse cursor after 3 seconds of no input;
-- scrolls slowly and continuously down the wall, looping back to the top;
-- pauses the scroll on any interaction and resumes after 10 seconds of quiet;
-- keeps the "+ Post an Opportunity" pill and the QR code visible, so people can
-  scan the submission form straight off the screen.
+Because a loop needs finite, repeating content, `/wall` loads the most recent
+**100 approved posts** up front rather than paging. Two consequences worth
+knowing:
 
-Newly approved posts appear within 20 seconds without a refresh, briefly glowing
-in their type's accent colour before settling.
+- The footer is unreachable on `/wall` — the loop wraps before it. Contact
+  details live on `/board` and `/board/new`.
+- Posts beyond the hundredth do not reach the wall. They are all still on the
+  Board, which pages normally.
 
-If the operating system requests reduced motion, the scroll animations and the
-kiosk auto-scroll are disabled entirely — so use a display machine that does not
-have "reduce motion" enabled.
+**Auto-scroll** runs at about 26px/s. It stops while the pointer is resting on
+a card, so anything can be read simply by pointing at it, and resumes a second
+after the pointer leaves. Deliberate gestures — scrolling, typing, tapping —
+hold it for ten seconds instead.
 
----
+### When a post is approved
+
+New posts do not simply appear. Each one is queued and given its own entrance:
+
+1. A **popper fires** from the left or right edge (chosen at random) and the
+   card slides in.
+2. It **holds centre stage**, floating above the wall, long enough to read,
+   with a second burst of confetti.
+3. A **gap opens** in the wall and the card settles into it, then scrolls on
+   with everything else.
+
+Posts are released one at a time, so several approvals in the same minute
+arrive in turn rather than all at once.
+
+### Kiosk mode
+
+Open `/wall?kiosk=1` full-screen (F11) on the display machine. It additionally
+hides the header, footer and view toggle, and hides the mouse pointer after
+three seconds of no input.
+
+The "+ Post an Opportunity" pill and its QR code stay visible in both modes, so
+people can scan the submission form straight off the screen.
+
+### Rehearsing an arrival
+
+On `/wall`, **numpad +** injects a ready-made sample post into the arrival
+queue and **numpad −** removes every sample again. (Plain `+` and `-` work too,
+for keyboards without a numpad.)
+
+These samples are client-side only: they never reach the database, skip
+moderation and the rate limiter, and disappear on reload. Enabled automatically
+in development; on a deployed build, add `?debug=1`.
+
+### Reduced motion
+
+If the operating system requests reduced motion, all of it is disabled — the
+loop, the auto-scroll, the arrival flight and the confetti. The wall renders a
+single copy and behaves as an ordinary page. Use a display machine that does
+not have "reduce motion" enabled.
 
 ## Design
 
@@ -213,6 +254,12 @@ draft specifically to satisfy this.
 The logo lockup is self-hosted at `public/nordeep-logo.png` (downloaded from
 nordeep.com) so the wall does not depend on a third-party request at render time.
 
+The two card variants deliberately differ. **Wall** cards carry only the title,
+the detail, location and contact — read at a distance, nothing competing.
+**Board** cards additionally show the type badge, organisation, tags and
+timestamp, because the Board's filter chips and its Organisation A–Z sort act
+on exactly those fields.
+
 ---
 
 ## Project layout
@@ -230,16 +277,20 @@ src/
     globals.css              brand tokens and component classes
     opengraph-image.tsx      generated LinkedIn/social preview card
   components/
-    WallClient.tsx           masonry, infinite scroll, live polling, kiosk
+    WallClient.tsx           loop, arrival queue, live polling, kiosk
+    wall-hooks.ts            column count, masonry packing, reveal, scroll loop
+    ArrivalFlight.tsx        slide in → hold centre stage → settle into the gap
     BoardClient.tsx          search, filters, sort, URL sync, submission modal
-    OpportunityCard.tsx      the card, shared by both pages
+    OpportunityCard.tsx      the card; wall and board variants differ on purpose
+    CardOpenTarget.tsx       stretched overlay making the whole card tappable
     SubmissionForm.tsx       validation, honeypot, character counter
     AdminClient.tsx          moderation queue and inline editor
-    wall-hooks.ts            column count, masonry packing, reveal, kiosk
     Modal.tsx                focus trap, Escape, scroll lock
   lib/
     repository.ts            data access (Supabase, or the demo store)
     validation.ts            one validator, used by form, API and moderator edits
+    confetti.ts              canvas party poppers, no dependency
+    debug-samples.ts         sample posts behind the numpad shortcuts
     types.ts                 opportunity types, work modes, field limits
     query.ts                 board state ⇄ URL query string
 supabase/
@@ -258,8 +309,12 @@ scripts/
 - All form controls have associated labels; errors are announced via
   `role="alert"` and an error summary that receives focus on submit.
 - Modals trap focus, close on Escape, and restore focus to the trigger.
-- `prefers-reduced-motion: reduce` disables the reveal animations, the arrival
-  glow and the kiosk auto-scroll.
+- `prefers-reduced-motion: reduce` disables the reveal animations, the scroll
+  loop, the arrival flight and the confetti.
+- The wall's duplicated loop copies are `inert`, so nothing is announced or
+  reachable by keyboard twice.
+- The view toggle fades to 10% until pointed at, but returns to full strength
+  on keyboard focus and on touch devices, where there is no hover to reveal it.
 - Skip links on both pages.
 
 ## Scripts

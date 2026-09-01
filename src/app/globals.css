@@ -305,6 +305,39 @@
     }
   }
 
+  /* --- Arrival slot ----------------------------------------------------- */
+  /* The gap that opens on the wall to receive an incoming post. Animating
+     grid-template-rows from 0fr to 1fr grows the row to the card's natural
+     height without anyone having to measure it first. */
+
+  .nd-slot {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 550ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  .nd-slot[data-open="true"] {
+    grid-template-rows: 1fr;
+  }
+
+  .nd-slot > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* The real card stays invisible while its flying copy is still in the air. */
+  .nd-slot-card {
+    opacity: 0;
+    transition: opacity 220ms ease-out;
+  }
+
+  .nd-slot[data-landed="true"] .nd-slot-card {
+    opacity: 1;
+    /* No fade: the flying copy unmounts on the same frame, and the two are
+       pixel-identical, so an instant swap is what makes the handover invisible. */
+    transition: none;
+  }
+
   /* --- Card tap target -------------------------------------------------- */
   /* Paired with src/components/CardOpenTarget.tsx. The ::after overlay is what
      makes the whole card tappable; siblings that must stay clickable carry
@@ -493,6 +526,17 @@
 
   .nd-card-interactive:hover {
     transform: none;
+  }
+
+  .nd-slot,
+  .nd-slot[data-open="true"] {
+    grid-template-rows: 1fr;
+    transition: none;
+  }
+
+  .nd-slot-card {
+    opacity: 1;
+    transition: none;
   }
 }
 
