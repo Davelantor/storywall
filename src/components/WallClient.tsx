@@ -65,7 +65,11 @@ export default function WallClient({
   useIsomorphicLayoutEffect(() => setRevealActive(true), []);
 
   const reducedMotion = useReducedMotion();
-  const columnCount = useColumnCount(items.length);
+  // Recomputing the column count reshuffles every column's card assignment
+  // (see useMasonryColumns), so it's only allowed to happen when nothing is
+  // actively arriving - otherwise a queue draining several posts in a row
+  // would reshuffle the whole wall mid-animation.
+  const columnCount = useColumnCount(items.length, !arrival && queue.length === 0);
   const columns = useMasonryColumns(items, columnCount, pinned);
   useCursorIdle(kiosk);
   useEffect(() => clearConfetti, []);
@@ -308,25 +312,40 @@ export default function WallClient({
         ref={rowRef}
         className="flex min-h-0 flex-1 items-stretch justify-center gap-4 overflow-hidden xl:gap-5"
       >
-        {columns.map((columnItems, columnIndex) => {
-          const inThisColumn =
-            slotId !== null && pinned.get(slotId) === columnIndex;
-          return (
-            <WallColumn
-              key={columnIndex}
-              columnIndex={columnIndex}
-              items={columnItems}
-              reducedMotion={reducedMotion}
-              revealActive={revealActive}
-              onOpen={setSelected}
-              arrived={arrived}
-              slotId={inThisColumn ? slotId : null}
-              slotOpen={slotOpen}
-              landed={landed}
-              settled={settled}
-            />
-          );
-        })}
+        {(() => {
+          // Clamped exactly as useMasonryColumns clamps a pinned column, so
+          // this always agrees with whichever column the slotted item
+          // actually rendered into - even in the unlikely event the column
+          // count itself changed since the pin was made (a resize is the
+          // only way that can happen, and only while idle - see
+          // useColumnCount - but agreeing by construction rather than by
+          // that invariant holding is one less thing to keep in sync).
+          const pinnedColumn =
+            slotId !== null ? pinned.get(slotId) : undefined;
+          const clampedPinnedColumn =
+            pinnedColumn !== undefined
+              ? Math.max(0, Math.min(pinnedColumn, columns.length - 1))
+              : undefined;
+
+          return columns.map((columnItems, columnIndex) => {
+            const inThisColumn = clampedPinnedColumn === columnIndex;
+            return (
+              <WallColumn
+                key={columnIndex}
+                columnIndex={columnIndex}
+                items={columnItems}
+                reducedMotion={reducedMotion}
+                revealActive={revealActive}
+                onOpen={setSelected}
+                arrived={arrived}
+                slotId={inThisColumn ? slotId : null}
+                slotOpen={slotOpen}
+                landed={landed}
+                settled={settled}
+              />
+            );
+          });
+        })()}
       </div>
 
       {arrival && (

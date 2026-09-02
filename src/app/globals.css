@@ -321,23 +321,73 @@
   }
 
   /* One copy of one column's card list. Columns are never stretched to match
-     each other - each has only its own content to fill - so the gap is fixed. */
+     each other - each has only its own content to fill - so the gap is fixed.
+
+     Spacing is done with margin-bottom per card, not the container's `gap`,
+     specifically so the arriving card's own gap can be animated (see
+     "Arrival slot" below). `gap` is a single value for the whole container -
+     there is no way to make just one pair's spacing start at zero and grow
+     with everything else already at its final size. Using margin instead
+     gives each card wrapper an animatable value of its own. */
 
   .nd-column-stack {
     display: flex;
     flex-direction: column;
-    gap: 20px; /* keep in sync with CARD_GAP_PX in wall-hooks.ts */
+    /* Single source for both: the card gap (must match CARD_GAP_PX in
+       wall-hooks.ts - the JS period calculation assumes this exact value),
+       and the arrival slot's grow-in motion, shared identically by its
+       grid-template-rows and margin-bottom transitions below so the two can
+       never drift out of lockstep with each other. */
+    --nd-card-gap: 20px;
+    --nd-arrival-motion: 550ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  .nd-column-stack > * {
+    margin-bottom: var(--nd-card-gap);
+  }
+
+  .nd-column-stack > *:last-child {
+    margin-bottom: 0;
   }
 
   /* --- Arrival slot ----------------------------------------------------- */
   /* The gap that opens on the wall to receive an incoming post. Animating
      grid-template-rows from 0fr to 1fr grows the row to the card's natural
-     height without anyone having to measure it first. */
+     height without anyone having to measure it first.
+
+     The card wrapper's own margin-bottom (the gap *below* the slot, between
+     it and whatever comes next) starts at zero and transitions to the normal
+     20px in lockstep with that same grid-rows animation - same duration,
+     same easing. Without this, the moment the slot is inserted into the DOM
+     the container's spacing would still apply in full immediately (CSS gap
+     and margin both take effect the instant an element exists, not when its
+     content does), so everything below would jump down by one full gap
+     before the row itself had grown at all. Animating the margin alongside
+     the height means the slot's total footprint - height *and* gap - starts
+     at genuinely zero and grows continuously, so the deck below eases down
+     rather than hopping. */
+
+  /* :not(:last-child) on both: a slot that ends up as the actual last card in
+     its column's stack (an arrival landing in a column with nothing else in
+     it yet, or the last card being trimmed at WALL_MAX_ITEMS) must keep the
+     zero margin :last-child sets, not the slot's own 20px. Without this,
+     [data-slot="true"][data-open="true"] (0,3,0) outranks
+     *:last-child (0,2,0) on specificity alone and wins regardless of order,
+     forcing a phantom trailing gap that widens this column's loop period
+     for as long as the slot stays open. */
+  .nd-column-stack > [data-slot="true"]:not(:last-child) {
+    margin-bottom: 0;
+    transition: margin-bottom var(--nd-arrival-motion);
+  }
+
+  .nd-column-stack > [data-slot="true"][data-open="true"]:not(:last-child) {
+    margin-bottom: var(--nd-card-gap);
+  }
 
   .nd-slot {
     display: grid;
     grid-template-rows: 0fr;
-    transition: grid-template-rows 550ms cubic-bezier(0.22, 0.61, 0.36, 1);
+    transition: grid-template-rows var(--nd-arrival-motion);
   }
 
   .nd-slot[data-open="true"] {
@@ -555,6 +605,11 @@
   .nd-slot,
   .nd-slot[data-open="true"] {
     grid-template-rows: 1fr;
+    transition: none;
+  }
+
+  .nd-column-stack > [data-slot="true"]:not(:last-child) {
+    margin-bottom: var(--nd-card-gap);
     transition: none;
   }
 

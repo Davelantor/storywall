@@ -128,6 +128,27 @@ Invariants that keep the seam invisible — break any and it visibly jitters:
   column's cards apart in sympathy each frame. That risk doesn't exist any
   more now that each column measures only itself, and re-freezing it
   reintroduces the overlap - keep it live.)
+- **Card spacing is `margin-bottom` per card, not the container's `gap`.**
+  `gap` is one value for the whole flex container - there is no way to make
+  one pair's spacing start at zero and animate while every other pair is
+  already at its final size. The arriving card's wrapper gets its own
+  `margin-bottom`, starting at zero and transitioning to `--nd-card-gap`
+  (20px) in lockstep with its `.nd-slot`'s `grid-template-rows` - same
+  duration and easing, both drawn from `--nd-arrival-motion` on
+  `.nd-column-stack` so the two can't drift apart. Without this the moment
+  the slot mounts, CSS spacing applies in full immediately (it doesn't wait
+  for content), so everything below jumps down by one whole gap before the
+  row has grown at all - the arriving card's *total* footprint, height and
+  gap together, must start at genuinely zero.
+- **The arriving card's margin rule must exclude `:last-child`.**
+  `[data-slot="true"][data-open="true"]` has higher specificity than
+  `*:last-child`, so without a `:not(:last-child)` guard on the slot rule, a
+  slot that happens to be the last card in its column (an arrival into an
+  otherwise-empty column, or the tail card after a `WALL_MAX_ITEMS` trim)
+  gets a phantom 20px trailing margin for as long as it's open, inflating
+  that column's period. Verify by forcing that exact case (a column with a
+  single card, currently mid-arrival) and checking computed `margin-bottom`
+  is `0px`, not `20px`.
 
 Verify periodicity after any change by measuring every card's `offsetTop`
 (not `getBoundingClientRect()` - it's scroll-relative and drifts mid-script)
@@ -148,6 +169,30 @@ anything to do with the loop being seamless (each column's period is simply
 whatever its own content adds up to); it only affects how balanced the
 columns look next to each other. A column left shorter than its neighbours
 just runs a shorter loop cycle, not a gap.
+
+**Column count only ever changes while idle.** `useColumnCount` takes an
+`idle` flag (`WallClient`: `!arrival && queue.length === 0`) alongside the
+live item count, and only *commits* a new column count while `idle` is true -
+the item count itself is always tracked live via a ref, just not acted on
+until then. `useMasonryColumns` clears and rebuilds every column's
+assignment from scratch whenever the column count changes, so committing it
+mid-arrival would reshuffle cards across every column while one of them is
+still animating: the exact flicker a continuously-running display must not
+have. The first version of this fix instead froze the column count to
+whatever the item count was at mount and never revisited it - simpler, but
+wrong in a different way: a kiosk opened early in the two-day event with a
+handful of approved posts would stay capped at that count for its entire
+run, never widening as hundreds more posts arrive. Tracking the value live
+but only *committing* it at a quiet moment keeps both properties: the wall
+still grows into more columns as real content accumulates, it just never
+does so while something is visibly in motion. A side effect worth knowing:
+because the effect's resize listener is only attached while `idle`, a window
+resize *during* an arrival doesn't recompute the column count either - it
+picks up the new viewport width the next time the wall goes idle, same as an
+item-count change would. Verify by firing enough debug arrivals
+(numpad **+**) to cross `MIN_CARDS_PER_COLUMN`'s threshold and confirming
+the rendered `.nd-wall-column` count stays constant throughout the burst,
+then rises once the queue is empty and idle for a moment.
 
 `pickLandingSpot()` in `WallClient` picks an arrival's column the same way:
 whichever on-screen column currently holds the least estimated content, among

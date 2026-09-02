@@ -87,11 +87,21 @@ export default function WallColumn({
       const el = firstCopyRef.current;
       if (!el || el.children.length === 0) return;
 
-      const content = Array.from(el.children).reduce(
-        (total, child) => total + child.getBoundingClientRect().height,
-        0,
-      );
-      const natural = content + (el.children.length - 1) * CARD_GAP_PX;
+      // Both reads happen before the write below. Reading container.clientHeight
+      // *after* writing --nd-period would force a second layout pass - the
+      // write invalidates layout, so the next read has to redo it - and this
+      // runs on every frame during an arrival now, doubling that cost for the
+      // whole animation.
+      //
+      // The stack's own rendered height, not a sum of children plus an
+      // assumed fixed gap. The two used to be interchangeable when every
+      // gap was always exactly CARD_GAP_PX, but the arriving card's own
+      // trailing margin now spends 550ms animating between zero and that -
+      // measuring the real box directly means the period tracks whatever
+      // the true current footprint is at every point in that transition,
+      // rather than assuming the end state and jumping ahead of it.
+      const natural = el.getBoundingClientRect().height;
+      const clientHeight = container.clientHeight;
 
       // Rounded up to a whole pixel: content heights are fractional, and a
       // fractional period would let the copies drift a pixel apart.
@@ -104,10 +114,7 @@ export default function WallColumn({
 
       // Enough copies that a full container height still sits below the
       // wrap point.
-      const needed = Math.max(
-        2,
-        Math.ceil(container.clientHeight / next) + 1,
-      );
+      const needed = Math.max(2, Math.ceil(clientHeight / next) + 1);
       setCopies((previous) => (previous === needed ? previous : needed));
     };
 
@@ -176,6 +183,13 @@ export default function WallColumn({
                   className={skipReveal ? undefined : "nd-reveal"}
                   data-card-id={item.id}
                   data-column={columnIndex}
+                  // Read by .nd-column-stack > [data-slot] in globals.css:
+                  // this wrapper's own margin-bottom (the gap below it)
+                  // animates from 0 alongside the slot's grid-rows, instead
+                  // of the container's spacing applying in full the instant
+                  // this element exists.
+                  data-slot={inSlot ? "true" : undefined}
+                  data-open={inSlot ? slotOpen : undefined}
                 >
                   {inSlot ? (
                     <div

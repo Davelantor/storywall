@@ -56,30 +56,58 @@ const BREAKPOINTS: Array<{ minWidth: number; columns: number }> = [
 ];
 
 /**
- * Below this many cards, a column has too few gaps to spread real content
- * variance across, so any difference between its cards' actual heights shows
- * up as one large, visible gap rather than being smoothed into several small
- * ones. A wide venue display asked to fill 6 columns from a dozen posts would
- * hit exactly that - each column gets just one or two gaps, so the ordinary
- * few-percent variance between two posts' text length becomes an obvious
- * void. Capping columns by how much content actually exists keeps every
- * column stocked enough to average that out.
+ * Below this many cards, a column loops through so few posts that the cycle
+ * reads as repetitive rather than as a wide sample of the wall. A venue
+ * display asked to fill 6 columns from a dozen posts would hit exactly that
+ * - each column gets only one or two cards to loop. Capping columns by how
+ * much content actually exists keeps every column stocked enough that its
+ * cycle feels like a real slice of the wall.
  */
 const MIN_CARDS_PER_COLUMN = 4;
 
-export function useColumnCount(itemCount: number): number {
+export function useColumnCount(
+  itemCount: number,
+  /**
+   * True whenever nothing is arriving right now - the queue is empty and no
+   * flight is in the air. `useMasonryColumns` reassigns every card from
+   * scratch whenever the column count changes, so recomputing it mid-arrival
+   * (an ordinary queue draining several posts in a row can easily cross
+   * `MIN_CARDS_PER_COLUMN`'s threshold) would reshuffle cards across every
+   * column while one of them is still mid-animation: exactly the flicker a
+   * continuously-running display must not have.
+   *
+   * This is *not* the same as freezing the value at mount forever, which was
+   * tried first and traded that flicker for a worse regression: a kiosk
+   * opened early in a two-day event with only a handful of approved posts
+   * would stay stuck at whatever column count it started with for its entire
+   * run, never widening as hundreds more posts get approved later - even
+   * across a resize. Reading the *latest* item count, but only committing a
+   * new column count at a quiet moment, keeps both: the wall still grows
+   * into more columns as real content accumulates, it just never does so
+   * while something is visibly in motion.
+   */
+  idle: boolean,
+): number {
   // Start at 1 so the server and the first client render agree; the effect
   // widens it immediately after mount.
   const [columns, setColumns] = useState(1);
 
+  // Always the latest value, read (not depended on) inside the effect below -
+  // so a change to itemCount alone never triggers a recompute mid-arrival,
+  // but whichever value is current gets picked up the moment `idle` allows it.
+  const itemCountRef = useRef(itemCount);
+  itemCountRef.current = itemCount;
+
   useIsomorphicLayoutEffect(() => {
+    if (!idle) return;
+
     const measure = () => {
       const width = window.innerWidth;
       const match = BREAKPOINTS.find((bp) => width >= bp.minWidth);
       const byWidth = match ? match.columns : 1;
       const byContent = Math.max(
         1,
-        Math.floor(itemCount / MIN_CARDS_PER_COLUMN),
+        Math.floor(itemCountRef.current / MIN_CARDS_PER_COLUMN),
       );
       setColumns(Math.max(1, Math.min(byWidth, byContent)));
     };
@@ -87,7 +115,7 @@ export function useColumnCount(itemCount: number): number {
     measure();
     window.addEventListener("resize", measure, { passive: true });
     return () => window.removeEventListener("resize", measure);
-  }, [itemCount]);
+  }, [idle]);
 
   return columns;
 }
