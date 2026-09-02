@@ -114,16 +114,31 @@ Invariants that keep the seam invisible — break any and it visibly jitters:
   position a few pixels after the programmatic jump.
 - **Measurement uses `el.scrollTop`, not the window.** Each column scrolls
   itself; there is no page-level `scrollY` or `offsetTop` walk involved at all.
-- **A column's own arrival slot freezes its own measurement**
-  (`arrivalInFlight` in `WallColumn`) while the slot's `grid-template-rows`
-  animation is changing this column's height every frame - recomputed once,
-  after the slot is torn down. This no longer has any effect beyond the one
-  column, since nothing reads across columns any more.
+- **The period is never frozen while a slot is open, and must not be.** The
+  slot's `grid-template-rows` animation grows this column's real content
+  height every frame; `measure()` tracks it every frame too; via the same
+  ResizeObserver that already fires continuously for a CSS-transition-driven
+  resize. Each per-copy wrapper's declared `height` comes from `--nd-period`,
+  and every card after that copy is positioned relative to that declared
+  height, not its actual content - so if the period fell behind the content
+  growing inside it even briefly, the next copy down would render on top of
+  the overflow instead of being pushed out of the way: cards visibly
+  overlapping mid-arrival. (An earlier design froze this, back when every
+  column shared one period and unfreezing it would have dragged every other
+  column's cards apart in sympathy each frame. That risk doesn't exist any
+  more now that each column measures only itself, and re-freezing it
+  reintroduces the overlap - keep it live.)
 
 Verify periodicity after any change by measuring every card's `offsetTop`
 (not `getBoundingClientRect()` - it's scroll-relative and drifts mid-script)
 against its twin one copy down, *within that column*: there must be exactly
-**one** distinct delta per column.
+**one** distinct delta per column. Verify the arrival specifically by sampling
+every adjacent card pair's bounding rect at ~30ms intervals through several
+back-to-back arrivals (numpad **+** fired repeatedly) and confirming zero
+frames where one card's bottom edge passes the next one's top - check both
+within a copy and across a copy boundary (the last card of one copy against
+the first card of the next), since the overlap this guards against only
+shows up at that boundary.
 
 **Column balance.** `useMasonryColumns` (wall-hooks.ts) still packs items
 across columns so they *look* reasonably even - each new item goes to

@@ -61,12 +61,6 @@ export default function WallColumn({
   // single copy and ordinary static content instead.
   const wantsLoop = !reducedMotion && items.length > 0;
 
-  // While this column's own arrival slot is open, its grid-rows animation
-  // changes this column's rendered height every frame; recomputing the period
-  // from that would just be chasing the slot's own transition. Frozen until
-  // the slot is torn down, then measured once more.
-  const arrivalInFlight = slotId !== null;
-
   useIsomorphicLayoutEffect(() => {
     const container = containerRef.current;
     if (!wantsLoop || !container) {
@@ -76,9 +70,20 @@ export default function WallColumn({
       return;
     }
 
+    // Deliberately not frozen while this column's own arrival slot is open.
+    // The slot's grid-rows transition grows the column's real content height
+    // every frame; if the period didn't track that, the copy's declared
+    // height (which every card below it is positioned relative to) would
+    // fall behind the content actually growing inside it, and the next
+    // copy down would render on top of the overflow instead of being pushed
+    // out of the way - cards visibly overlapping mid-arrival. Tracking it
+    // every frame instead means the whole deck below the opening gap moves
+    // down in step with it, which is the point of the animation. This was
+    // frozen in an earlier design where every column shared one period, to
+    // stop this column's growth from also dragging its neighbours' cards
+    // apart every frame - that risk doesn't exist any more now that each
+    // column measures only itself.
     const measure = () => {
-      if (arrivalInFlight) return;
-
       const el = firstCopyRef.current;
       if (!el || el.children.length === 0) return;
 
@@ -113,7 +118,7 @@ export default function WallColumn({
     observer.observe(container);
 
     return () => observer.disconnect();
-  }, [wantsLoop, items, arrivalInFlight]);
+  }, [wantsLoop, items]);
 
   useColumnLoop({ enabled: wantsLoop, containerRef, periodRef });
 
