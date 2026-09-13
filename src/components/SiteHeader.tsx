@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { cn } from "@/lib/format";
 
+import ColumnsSelect from "./ColumnsSelect";
 import ThemeToggle from "./ThemeToggle";
 
 type Props = {
@@ -29,7 +30,7 @@ export default function SiteHeader({
       <div
         className={cn(
           isDisplay ? "nd-container-wide" : "nd-container",
-          "flex flex-wrap items-center justify-between gap-x-8 gap-y-4 py-4 md:py-5",
+          "flex flex-wrap items-center justify-between gap-x-8 gap-y-2 py-2 md:py-2.5",
         )}
       >
         {/* Full width below sm so the toggle wraps to its own line: logo, title
@@ -48,23 +49,25 @@ export default function SiteHeader({
               width={1000}
               height={358}
               priority
-              className="h-9 w-auto md:h-11"
+              className="h-6 w-auto md:h-8"
             />
           </a>
 
           {showTitle && (
-            <div className="min-w-0 border-l border-nd-line pl-4 md:pl-6">
+            <div className="min-w-0 flex-1 border-l border-nd-line pl-4 md:pl-6">
               <h1
                 className={cn(
                   "nd-display",
                   isDisplay
-                    ? "text-[17px] sm:text-[22px] lg:text-[28px]"
-                    : "text-[16px] sm:text-[20px] lg:text-[24px]",
+                    ? "text-[15px] sm:text-[18px] lg:text-[22px]"
+                    : "text-[14px] sm:text-[17px] lg:text-[19px]",
                 )}
               >
                 Live Opportunity <span className="text-nd-accent">Wall</span>
               </h1>
-              <p className="mt-0.5 hidden max-w-[68ch] text-[12px] leading-snug text-nd-muted md:block lg:text-[13px]">
+              {/* Single line, truncated rather than wrapped - a second line
+                  was the tallest thing in the header, driving its height. */}
+              <p className="hidden truncate whitespace-nowrap text-[12px] leading-snug text-nd-muted md:block">
                 Where the global deep tech ecosystem posts, discovers, and acts
                 on real-time opportunities.
               </p>
@@ -72,11 +75,13 @@ export default function SiteHeader({
           )}
         </div>
 
-        {/* Both invisible until pointed at (see .nd-header-controls) - the
-            venue screen stays clean, and hovering either one reveals both
-            since they read as one control cluster. */}
+        {/* All invisible until pointed at (see .nd-header-controls) - the
+            venue screen stays clean, and hovering any one of them reveals
+            the whole cluster since they read as one control group. Column
+            count only makes sense on the wall itself. */}
         <div className="nd-header-controls ml-auto flex items-center gap-2">
           <ThemeToggle />
+          {active === "wall" && <ColumnsSelect />}
           <ViewToggle active={active} />
         </div>
       </div>
@@ -91,11 +96,11 @@ function ViewToggle({ active }: { active: Props["active"] }) {
   // ThemeToggle's <button>s (block-level by default) despite identical
   // padding. Keep this in sync with the `base` string in ThemeToggle.tsx.
   const base =
-    "inline-flex items-center justify-center px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] transition-colors duration-200 rounded-[2px]";
+    "inline-flex items-center justify-center px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] transition-colors duration-200 rounded-[2px]";
 
   return (
     <nav aria-label="Switch view">
-      <ul className="flex items-center gap-1 rounded-[4px] border border-nd-line bg-nd-surface p-1">
+      <ul className="flex items-center gap-1 rounded-[4px] border border-nd-line bg-nd-surface p-0.5">
         <li>
           <Link
             href="/wall"

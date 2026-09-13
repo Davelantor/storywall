@@ -9,6 +9,11 @@ import {
   useState,
 } from "react";
 
+import {
+  type ColumnsPreference,
+  COLUMNS_CHANGE_EVENT,
+  readColumnsPreference,
+} from "@/lib/columns";
 import type { Opportunity } from "@/lib/types";
 
 /**
@@ -80,11 +85,11 @@ export function useColumnCount(
    * True whenever nothing is arriving right now - the queue is empty and no
    * flight is in the air. `useMasonryColumns` reassigns every card from
    * scratch whenever the column count changes, so recomputing it mid-arrival
-   * (a resize landing mid-animation) would reshuffle cards across every
-   * column while one of them is still mid-animation: exactly the flicker a
-   * continuously-running display must not have. Recomputing only at a quiet
-   * moment defers that resize's effect until the wall is idle again, same as
-   * an item-count change would.
+   * (a resize landing mid-animation, or a manual override from
+   * ColumnsSelect) would reshuffle cards across every column while one of
+   * them is still mid-animation: exactly the flicker a continuously-running
+   * display must not have. Recomputing only at a quiet moment defers that
+   * change until the wall is idle again, same as an item-count change would.
    */
   idle: boolean,
 ): number {
@@ -92,15 +97,34 @@ export function useColumnCount(
   // widens it immediately after mount.
   const [columns, setColumns] = useState(1);
 
+  // "auto" (the default, unset preference) until read from localStorage -
+  // unknown during SSR, so this can't be the initial state above without
+  // mismatching the server render. ColumnsSelect can't just write this prop
+  // directly (it isn't a descendant of whichever WallColumn mounted this
+  // hook - see writeColumnsPreference), so this also listens for its event.
+  const [preference, setPreference] = useState<ColumnsPreference>("auto");
+
+  useEffect(() => {
+    setPreference(readColumnsPreference());
+    const onChange = (event: Event) => {
+      setPreference((event as CustomEvent<ColumnsPreference>).detail);
+    };
+    window.addEventListener(COLUMNS_CHANGE_EVENT, onChange);
+    return () => window.removeEventListener(COLUMNS_CHANGE_EVENT, onChange);
+  }, []);
+
   useIsomorphicLayoutEffect(() => {
     if (!idle) return;
 
-    const measure = () => setColumns(columnsForWidth(window.innerWidth));
+    const measure = () =>
+      setColumns(preference === "auto" ? columnsForWidth(window.innerWidth) : preference);
 
     measure();
+    if (preference !== "auto") return;
+
     window.addEventListener("resize", measure, { passive: true });
     return () => window.removeEventListener("resize", measure);
-  }, [idle]);
+  }, [idle, preference]);
 
   return columns;
 }

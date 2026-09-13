@@ -40,11 +40,11 @@ export default function ThemeToggle() {
   // inline-flex is what makes this match its <button>s to that one's <a>s
   // pixel-for-pixel despite the different default element display.
   const base =
-    "inline-flex items-center justify-center px-4 py-2 text-[11px] font-bold uppercase tracking-[0.14em] transition-colors duration-200 rounded-[2px]";
+    "inline-flex items-center justify-center px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] transition-colors duration-200 rounded-[2px]";
 
   return (
     <nav aria-label="Switch theme">
-      <ul className="flex items-center gap-1 rounded-[4px] border border-nd-line bg-nd-surface p-1">
+      <ul className="flex items-center gap-1 rounded-[4px] border border-nd-line bg-nd-surface p-0.5">
         <li>
           <button
             type="button"

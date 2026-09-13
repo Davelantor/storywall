@@ -223,6 +223,21 @@ wall goes idle, not immediately. Verify by resizing the viewport mid-arrival
 and confirming the rendered `.nd-wall-column` count only updates once the
 queue is empty and idle for a moment.
 
+**Manual override.** `ColumnsSelect.tsx` (in the header, `/wall` only) lets a
+visitor pin the count to 1–10 instead of the width-based computation above,
+via a dropdown with "Auto" first. It and `useColumnCount` aren't in the same
+component tree (the header and the wall's own column row are siblings under
+`wall/page.tsx`), so the preference can't just be a lifted `useState` -
+`src/lib/columns.ts` holds it instead: `localStorage` for persistence, plus
+a `window` `CustomEvent` (`COLUMNS_CHANGE_EVENT`) so an already-mounted wall
+in the *same* tab picks up a change immediately (the native `storage` event
+only fires in *other* tabs). A manual value still only commits while idle,
+same as a resize - it goes through the identical `useIsomorphicLayoutEffect`
+in `useColumnCount`, so it's bound by the same anti-flicker rule. Manual
+values aren't clamped to `MAX_COLUMNS` (8) - that ceiling exists only to
+bound the *automatic* computation on absurdly wide displays; a deliberate
+choice of 9 or 10 is allowed through as asked.
+
 `pickLandingSpot()` in `WallClient` picks an arrival's column the same way:
 whichever on-screen column currently holds the least estimated content, among
 cards the viewer can actually see (so the gap opens somewhere visible). It
@@ -345,14 +360,19 @@ page's theme.
 
 ### Header controls visibility
 
-`.nd-header-controls` in `globals.css` wraps `ThemeToggle` and `ViewToggle`
-in `SiteHeader.tsx` and hides both at `opacity: 0` until hovered or
-focused-within - the venue screen should read clean, not busy with controls
-nobody at the summit needs to see. Scoped to `@media (hover: hover)`: a
-touch device has no hover to reveal them with, and the view toggle is the
-only way between Wall and Board, so phones and tablets get both at full
-strength always. `opacity: 0` does not remove either nav from the tab
-order, just hides it until a keyboard user's tab order reaches it.
+`.nd-header-controls` in `globals.css` wraps `ThemeToggle`, `ColumnsSelect`
+(wall only) and `ViewToggle` in `SiteHeader.tsx` and hides all of them at
+`opacity: 0` until hovered or focused-within - the venue screen should read
+clean, not busy with controls nobody at the summit needs to see. Scoped to
+`@media (hover: hover)`: a touch device has no hover to reveal them with,
+and the view toggle is the only way between Wall and Board, so phones and
+tablets get all three at full strength always. `opacity: 0` does not remove
+any of them from the tab order, just hides it until a keyboard user's tab
+order reaches it. `ColumnsSelect`'s `<select>` needed an explicit `h-[34.7px]`
+rather than matching `ThemeToggle`/`ViewToggle`'s padding-only sizing - a
+`<select>`'s closed-state box ignores `line-height` for its own height
+(unlike a `<button>`, which inherits it), so identical padding alone
+rendered it a couple of pixels short.
 
 ## Conventions
 

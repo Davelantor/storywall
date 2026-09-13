@@ -187,6 +187,13 @@ no delay either way. Hovering a card in one column has no effect on any
 other. Nothing else — clicking, typing, a wheel nudge — pauses or wakes a
 column; hovering a card is the only thing that does.
 
+The column count above is computed from viewport width, but a "Columns"
+dropdown in the header (Auto, then 1–10) can pin it instead — useful for
+rehearsing how a specific venue screen will look without physically resizing
+the browser. It's still subject to the same idle-only rule as a resize (see
+"The wall" in [`CLAUDE.md`](CLAUDE.md)), so choosing a value mid-arrival
+takes effect once the wall goes quiet again, not instantly.
+
 ### When a post goes live
 
 New posts do not simply appear. Each one is queued and given its own entrance:
@@ -204,8 +211,10 @@ arrive in turn rather than all at once.
 ### Kiosk mode
 
 Open `/wall?kiosk=1` full-screen (F11) on the display machine. It additionally
-hides the header and view toggle, and hides the mouse pointer after three
-seconds of no input.
+hides the header entirely (theme, columns and view toggles included), and
+hides the mouse pointer after three seconds of no input. Set the column
+count and theme you want *before* switching to kiosk mode — both persist in
+`localStorage`, so they carry over once the header disappears.
 
 The "Post an Opportunity" and "See the Full Board" QR pills stay visible in
 both modes, so people can scan straight off the screen.
@@ -293,6 +302,7 @@ src/
     AdminClient.tsx          moderation queue and inline editor
     Modal.tsx                focus trap, Escape, scroll lock
     ThemeToggle.tsx          light/dark switch, applies + persists the choice
+    ColumnsSelect.tsx        pins the wall's column count (Auto, 1-10)
   lib/
     repository.ts            data access - one JSON file per post under DATA_DIR
     validation.ts            one validator, used by form, API and moderator edits
@@ -300,6 +310,7 @@ src/
     types.ts                 opportunity types, work modes, field limits
     query.ts                 board state ⇄ URL query string
     theme.ts                 storage key + the pre-hydration theme-init script
+    columns.ts               storage key + change event for the columns override
 data/
   pending/ live/ rejected/    post files, one per folder per status (gitignored)
 ```
