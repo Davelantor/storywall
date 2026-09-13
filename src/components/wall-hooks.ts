@@ -40,51 +40,51 @@ export function useReducedMotion(): boolean {
 /* ==========================================================================
    Responsive column count
    --------------------------------------------------------------------------
-   1 on mobile, 2 on tablet, 3-4 on desktop, 5-6 on a venue display. Each
-   column is independently max-width:520px (see WallColumn / .nd-wall-column),
-   so this decides how many of them to render, not how wide any one is - the
-   row centres itself when the columns don't need the full viewport width.
+   Driven purely by viewport width against each column's own hard cap
+   (max-width: 520px, WALL_COLUMN_MAX_WIDTH in WallColumn.tsx) rather than a
+   handful of fixed breakpoints. Fixed breakpoints leave a wide gap between
+   whichever step they land on and the next: a venue display at 2560px, say,
+   sat on the same column count as 1900px and rendered columns nowhere near
+   their 520px cap, leaving the row visibly short of the screen edges instead
+   of filling it. Computing the *minimum* number of columns whose combined
+   max-width can span the viewport scales continuously instead - 1080p, 1440p,
+   4K, and everything in between all get exactly enough columns to fill the
+   row edge to edge (each stretching up to, but never past, its own cap via
+   `flex: 1 1 0` on `.nd-wall-column`), with no jump discontinuities.
+
+   Deliberately independent of how many posts exist: the wall is meant to
+   read as a full row of columns from the very first frame, before a single
+   post has arrived, not just once enough content exists to justify them. An
+   earlier version also capped the count by content (so a handful of posts
+   wouldn't loop through only one or two cards each) - that capping is what
+   caused the count to visibly collapse to a single column at zero posts and
+   then jump around as the first few arrived. Columns start empty and simply
+   fill in as posts land.
    ========================================================================== */
 
-const BREAKPOINTS: Array<{ minWidth: number; columns: number }> = [
-  { minWidth: 2400, columns: 6 },
-  { minWidth: 1900, columns: 5 },
-  { minWidth: 1500, columns: 4 },
-  { minWidth: 1100, columns: 3 },
-  { minWidth: 700, columns: 2 },
-  { minWidth: 0, columns: 1 },
-];
+/** Must match WALL_COLUMN_MAX_WIDTH in WallColumn.tsx / .nd-wall-column. */
+const COLUMN_MAX_WIDTH_PX = 520;
 
-/**
- * Below this many cards, a column loops through so few posts that the cycle
- * reads as repetitive rather than as a wide sample of the wall. A venue
- * display asked to fill 6 columns from a dozen posts would hit exactly that
- * - each column gets only one or two cards to loop. Capping columns by how
- * much content actually exists keeps every column stocked enough that its
- * cycle feels like a real slice of the wall.
- */
-const MIN_CARDS_PER_COLUMN = 4;
+const MIN_COLUMNS = 1;
+/** Hard ceiling regardless of width - keeps DOM cost (N copies per column)
+ * bounded on absurdly wide displays rather than chasing every extra pixel. */
+const MAX_COLUMNS = 8;
+
+function columnsForWidth(width: number): number {
+  const needed = Math.ceil(width / COLUMN_MAX_WIDTH_PX);
+  return Math.max(MIN_COLUMNS, Math.min(MAX_COLUMNS, needed));
+}
 
 export function useColumnCount(
-  itemCount: number,
   /**
    * True whenever nothing is arriving right now - the queue is empty and no
    * flight is in the air. `useMasonryColumns` reassigns every card from
    * scratch whenever the column count changes, so recomputing it mid-arrival
-   * (an ordinary queue draining several posts in a row can easily cross
-   * `MIN_CARDS_PER_COLUMN`'s threshold) would reshuffle cards across every
+   * (a resize landing mid-animation) would reshuffle cards across every
    * column while one of them is still mid-animation: exactly the flicker a
-   * continuously-running display must not have.
-   *
-   * This is *not* the same as freezing the value at mount forever, which was
-   * tried first and traded that flicker for a worse regression: a kiosk
-   * opened early in a two-day event with only a handful of approved posts
-   * would stay stuck at whatever column count it started with for its entire
-   * run, never widening as hundreds more posts get approved later - even
-   * across a resize. Reading the *latest* item count, but only committing a
-   * new column count at a quiet moment, keeps both: the wall still grows
-   * into more columns as real content accumulates, it just never does so
-   * while something is visibly in motion.
+   * continuously-running display must not have. Recomputing only at a quiet
+   * moment defers that resize's effect until the wall is idle again, same as
+   * an item-count change would.
    */
   idle: boolean,
 ): number {
@@ -92,25 +92,10 @@ export function useColumnCount(
   // widens it immediately after mount.
   const [columns, setColumns] = useState(1);
 
-  // Always the latest value, read (not depended on) inside the effect below -
-  // so a change to itemCount alone never triggers a recompute mid-arrival,
-  // but whichever value is current gets picked up the moment `idle` allows it.
-  const itemCountRef = useRef(itemCount);
-  itemCountRef.current = itemCount;
-
   useIsomorphicLayoutEffect(() => {
     if (!idle) return;
 
-    const measure = () => {
-      const width = window.innerWidth;
-      const match = BREAKPOINTS.find((bp) => width >= bp.minWidth);
-      const byWidth = match ? match.columns : 1;
-      const byContent = Math.max(
-        1,
-        Math.floor(itemCountRef.current / MIN_CARDS_PER_COLUMN),
-      );
-      setColumns(Math.max(1, Math.min(byWidth, byContent)));
-    };
+    const measure = () => setColumns(columnsForWidth(window.innerWidth));
 
     measure();
     window.addEventListener("resize", measure, { passive: true });

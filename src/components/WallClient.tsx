@@ -88,7 +88,7 @@ export default function WallClient({
   // (see useMasonryColumns), so it's only allowed to happen when nothing is
   // actively arriving - otherwise a queue draining several posts in a row
   // would reshuffle the whole wall mid-animation.
-  const columnCount = useColumnCount(items.length, !arrival && queue.length === 0);
+  const columnCount = useColumnCount(!arrival && queue.length === 0);
   const columns = useMasonryColumns(items, columnCount, pinned);
   useCursorIdle(kiosk);
   useEffect(() => clearConfetti, []);

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/format";
 import {
@@ -64,10 +64,15 @@ export default function SubmissionForm({
   const [status, setStatus] = useState<"idle" | "sending" | "done">("idle");
   const [formError, setFormError] = useState<string | null>(null);
   const [customTag, setCustomTag] = useState("");
+  const [tagQuery, setTagQuery] = useState("");
+  const [tagMenuOpen, setTagMenuOpen] = useState(false);
+  const [showCustomTagInput, setShowCustomTagInput] = useState(false);
 
   // Honeypot: hidden from people, irresistible to bots.
   const honeypot = useRef<HTMLInputElement>(null);
   const errorSummary = useRef<HTMLDivElement>(null);
+  const tagMenuRef = useRef<HTMLDivElement>(null);
+  const customTagInput = useRef<HTMLInputElement>(null);
   const ids = useIds();
 
   const detailRemaining = FIELD_LIMITS.detail - draft.detail.length;
@@ -116,6 +121,35 @@ export default function SubmissionForm({
     if (draft.tags.length >= FIELD_LIMITS.tags) return;
     setDraft((previous) => ({ ...previous, tags: [...previous.tags, tag] }));
     setCustomTag("");
+  };
+
+  const filteredTags = useMemo(() => {
+    const q = tagQuery.trim().toLowerCase();
+    if (!q) return SUGGESTED_TAGS;
+    return SUGGESTED_TAGS.filter((tag) => tag.toLowerCase().includes(q));
+  }, [tagQuery]);
+
+  // Close the tag dropdown on an outside click or Escape.
+  useEffect(() => {
+    if (!tagMenuOpen) return;
+    const handlePointer = (event: MouseEvent) => {
+      if (!tagMenuRef.current?.contains(event.target as Node)) setTagMenuOpen(false);
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTagMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [tagMenuOpen]);
+
+  const openCustomTagInput = () => {
+    setTagMenuOpen(false);
+    setShowCustomTagInput(true);
+    window.setTimeout(() => customTagInput.current?.focus(), 0);
   };
 
   const remaining = useMemo(
@@ -399,71 +433,122 @@ export default function SubmissionForm({
             optional, up to {FIELD_LIMITS.tags}
           </span>
         </legend>
-        <div className="flex flex-wrap gap-2">
-          {SUGGESTED_TAGS.map((tag) => {
-            const selected = draft.tags.includes(tag);
-            const full = draft.tags.length >= FIELD_LIMITS.tags && !selected;
-            return (
-              <button
-                key={tag}
-                type="button"
-                className="nd-chip disabled:cursor-not-allowed disabled:opacity-40"
-                aria-pressed={selected}
-                disabled={full}
-                onClick={() => toggleTag(tag)}
-              >
-                {tag}
-              </button>
-            );
-          })}
-        </div>
 
-        {draft.tags.some((tag) => !SUGGESTED_TAGS.includes(tag as never)) && (
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {draft.tags
-              .filter((tag) => !SUGGESTED_TAGS.includes(tag as never))
-              .map((tag) => (
-                <li key={tag}>
-                  <button
-                    type="button"
-                    className="nd-chip"
-                    aria-pressed
-                    onClick={() => toggleTag(tag)}
-                  >
-                    {tag} <span aria-hidden="true">×</span>
-                    <span className="nd-sr-only">Remove tag {tag}</span>
-                  </button>
-                </li>
-              ))}
+        {draft.tags.length > 0 && (
+          <ul className="mb-2 flex flex-wrap gap-2">
+            {draft.tags.map((tag) => (
+              <li key={tag}>
+                <button
+                  type="button"
+                  className="nd-chip"
+                  aria-pressed
+                  onClick={() => toggleTag(tag)}
+                >
+                  {tag} <span aria-hidden="true">×</span>
+                  <span className="nd-sr-only">Remove tag {tag}</span>
+                </button>
+              </li>
+            ))}
           </ul>
         )}
 
-        <div className="mt-3 flex gap-2">
-          <input
-            id={ids.customTag}
-            className="nd-field max-w-[240px]"
-            value={customTag}
-            maxLength={FIELD_LIMITS.tagLength}
-            placeholder="Add your own tag"
-            aria-label="Add your own tag"
-            disabled={draft.tags.length >= FIELD_LIMITS.tags}
-            onChange={(event) => setCustomTag(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addCustomTag();
-              }
-            }}
-          />
+        <div className="relative" ref={tagMenuRef}>
           <button
             type="button"
-            className="nd-btn nd-btn-quiet"
-            onClick={addCustomTag}
-            disabled={draft.tags.length >= FIELD_LIMITS.tags || !customTag.trim()}
+            className="nd-field flex w-full items-center justify-between text-left disabled:cursor-not-allowed disabled:opacity-40"
+            aria-haspopup="listbox"
+            aria-expanded={tagMenuOpen}
+            disabled={draft.tags.length >= FIELD_LIMITS.tags}
+            onClick={() => setTagMenuOpen((open) => !open)}
           >
-            Add
+            <span className="text-nd-faint">
+              {draft.tags.length >= FIELD_LIMITS.tags
+                ? `${FIELD_LIMITS.tags} tags added`
+                : "Choose a tag…"}
+            </span>
+            <span aria-hidden="true">▾</span>
           </button>
+
+          {tagMenuOpen && (
+            <div className="absolute z-10 mt-1 w-full rounded-[4px] border border-nd-line-soft bg-nd-surface shadow-lg">
+              <input
+                autoFocus
+                type="text"
+                value={tagQuery}
+                onChange={(event) => setTagQuery(event.target.value)}
+                placeholder="Search tags…"
+                aria-label="Search tags"
+                className="nd-field rounded-b-none border-0 border-b border-nd-line-soft"
+              />
+              <ul role="listbox" aria-multiselectable className="max-h-56 overflow-y-auto p-1">
+                {filteredTags.map((tag) => {
+                  const selected = draft.tags.includes(tag);
+                  const full = draft.tags.length >= FIELD_LIMITS.tags && !selected;
+                  return (
+                    <li key={tag}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        disabled={full}
+                        className={cn(
+                          "block w-full rounded-[3px] px-3 py-2 text-left text-[14px] text-nd-body hover:bg-nd-surface-2 disabled:cursor-not-allowed disabled:opacity-40",
+                          selected && "text-nd-accent",
+                        )}
+                        onClick={() => toggleTag(tag)}
+                      >
+                        {selected && <span aria-hidden="true">✓ </span>}
+                        {tag}
+                      </button>
+                    </li>
+                  );
+                })}
+                {filteredTags.length === 0 && (
+                  <li className="px-3 py-2 text-[13px] text-nd-faint">No matching tags.</li>
+                )}
+                <li className="mt-1 border-t border-nd-line-soft pt-1">
+                  <button
+                    type="button"
+                    className="block w-full rounded-[3px] px-3 py-2 text-left text-[14px] text-nd-body hover:bg-nd-surface-2"
+                    onClick={openCustomTagInput}
+                  >
+                    Other — add your own
+                  </button>
+                </li>
+              </ul>
+            </div>
+          )}
         </div>
+
+        {showCustomTagInput && (
+          <div className="mt-3 flex gap-2">
+            <input
+              ref={customTagInput}
+              id={ids.customTag}
+              className="nd-field max-w-[280px]"
+              value={customTag}
+              maxLength={FIELD_LIMITS.tagLength}
+              placeholder="Add your own tag"
+              aria-label="Add your own tag"
+              disabled={draft.tags.length >= FIELD_LIMITS.tags}
+              onChange={(event) => setCustomTag(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addCustomTag();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="nd-btn nd-btn-quiet"
+              onClick={addCustomTag}
+              disabled={draft.tags.length >= FIELD_LIMITS.tags || !customTag.trim()}
+            >
+              Add
+            </button>
+          </div>
+        )}
         {errors.tags && <FieldError id={`${ids.customTag}-error`}>{errors.tags}</FieldError>}
       </fieldset>
 
