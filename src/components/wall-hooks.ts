@@ -209,6 +209,26 @@ export function useMasonryColumns(
       assignment.current.clear();
     }
 
+    // Forget ids no longer present. Without this, a card that gets pulled
+    // (admin) and later re-approved keeps its old assignment forever - the
+    // arrival's fresh `pinned` column is silently ignored below since
+    // `assignment.current.has(item.id)` is still true, so the card renders
+    // in a different column than the one WallClient told to open a slot in.
+    // No element ends up with that slot's `data-arrival-slot` anywhere, so
+    // ArrivalFlight's findSlot() comes back empty and the flight bails out
+    // instantly with no animation. Recomputing heights from scratch alongside
+    // this also stops a long-gone card's height from permanently skewing the
+    // packing balance for whichever column it used to occupy.
+    const presentIds = new Set(items.map((item) => item.id));
+    for (const id of assignment.current.keys()) {
+      if (!presentIds.has(id)) assignment.current.delete(id);
+    }
+    heights.current.fill(0);
+    for (const item of items) {
+      const existing = assignment.current.get(item.id);
+      if (existing !== undefined) heights.current[existing]! += estimateHeight(item);
+    }
+
     for (const item of items) {
       if (assignment.current.has(item.id)) continue;
 
