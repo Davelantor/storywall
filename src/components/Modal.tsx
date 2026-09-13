@@ -148,7 +148,7 @@ export function ModalClose({ onClose }: { onClose: () => void }) {
     <button
       type="button"
       onClick={onClose}
-      className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-[3px] border border-nd-line bg-nd-black text-nd-body transition-colors duration-200 hover:border-white hover:text-white"
+      className="absolute right-3 top-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-[3px] border border-nd-line bg-nd-black text-nd-body transition-colors duration-200 hover:border-nd-white hover:text-nd-white"
       aria-label="Close"
     >
       <svg

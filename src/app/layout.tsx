@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Montserrat, Poppins } from "next/font/google";
 
 import "./globals.css";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 // The two families nordeep.com loads from Google Fonts.
 const poppins = Poppins({
@@ -48,7 +49,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#000000",
-  colorScheme: "dark",
+  colorScheme: "dark light",
   width: "device-width",
   initialScale: 1,
 };
@@ -57,7 +58,19 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${poppins.variable} ${montserrat.variable}`}>
+    <html
+      lang="en"
+      className={`${poppins.variable} ${montserrat.variable}`}
+      // THEME_INIT_SCRIPT sets data-theme/style.colorScheme on this element
+      // before React hydrates, so the DOM legitimately has attributes the
+      // server-rendered markup didn't - expected, not a real mismatch.
+      suppressHydrationWarning
+    >
+      <head>
+        {/* Sets data-theme before paint - see THEME_INIT_SCRIPT for why this
+            has to be a blocking inline script rather than a React effect. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

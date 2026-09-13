@@ -31,7 +31,7 @@ export default function NewOpportunityPage() {
           <nav aria-label="Breadcrumb" className="mb-6">
             <Link
               href="/board"
-              className="inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-nd-muted transition-colors duration-200 hover:text-white"
+              className="inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-nd-muted transition-colors duration-200 hover:text-nd-white"
             >
               <span aria-hidden="true">←</span> Back to the board
             </Link>

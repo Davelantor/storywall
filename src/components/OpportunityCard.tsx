@@ -35,7 +35,7 @@ export function TypeBadge({
         className,
       )}
       style={{
-        color: meta.text,
+        color: meta.badgeText,
         borderColor: meta.border,
         backgroundColor: meta.bg,
       }}
@@ -74,7 +74,7 @@ export function ContactLinks({
   compact?: boolean;
 }) {
   const linkClass =
-    "relative z-10 inline-flex max-w-full items-center gap-1.5 text-[12px] font-semibold text-nd-accent-hi underline-offset-4 transition-colors duration-200 hover:text-white hover:underline";
+    "relative z-10 inline-flex max-w-full items-center gap-1.5 text-[12px] font-semibold text-nd-accent-hi underline-offset-4 transition-colors duration-200 hover:text-nd-white hover:underline";
 
   const showJd = !compact && opportunity.jd_url;
   const showNote = !compact && opportunity.contact_note;
@@ -203,7 +203,7 @@ export default function OpportunityCard({
         arrived
           ? ({
               "--nd-arrive-glow": meta.glow,
-              "--nd-arrive-border": meta.text,
+              "--nd-arrive-border": meta.badgeText,
             } as React.CSSProperties)
           : undefined
       }
@@ -252,7 +252,7 @@ export default function OpportunityCard({
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
           aria-controls={detailId}
-          className="relative z-10 mt-1.5 self-start text-[12px] font-bold uppercase tracking-[0.1em] text-nd-accent-hi transition-colors duration-200 hover:text-white"
+          className="relative z-10 mt-1.5 self-start text-[12px] font-bold uppercase tracking-[0.1em] text-nd-accent-hi transition-colors duration-200 hover:text-nd-white"
         >
           {expanded ? "Less" : "More"}
         </button>

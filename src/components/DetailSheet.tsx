@@ -85,7 +85,7 @@ export default function DetailSheet({
               <dt className="nd-eyebrow text-nd-faint">Type</dt>
               <dd
                 className="mt-1 font-semibold"
-                style={{ color: TYPE_META[opportunity.type].text }}
+                style={{ color: TYPE_META[opportunity.type].badgeText }}
               >
                 {TYPE_META[opportunity.type].label}
               </dd>

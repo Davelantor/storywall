@@ -17,8 +17,9 @@ NORDEEP team before it appears.
 | `/admin`     | Moderation queue — approve / release to wall / reject / edit            |
 
 Built with Next.js 16 (App Router), React 19, TypeScript and Tailwind CSS 4.
-Posts are stored as files on disk — one JSON file per post. Dark theme only —
-that is the brand.
+Posts are stored as files on disk — one JSON file per post. Dark is the
+default theme (the brand), with a light/dark toggle in the header (see
+[Design](#design)).
 
 ---
 
@@ -206,24 +207,8 @@ Open `/wall?kiosk=1` full-screen (F11) on the display machine. It additionally
 hides the header and view toggle, and hides the mouse pointer after three
 seconds of no input.
 
-The "+ Post an Opportunity" pill and its QR code stay visible in both modes, so
-people can scan the submission form straight off the screen.
-
-### Rehearsing an arrival or removal
-
-On `/wall`, **numpad +** injects a ready-made sample post into the arrival
-queue, **numpad −** clears every sample instantly, and **Delete** marks one
-random visible card for removal - any card, sample or real. (Plain `+` and
-`-` work too, for keyboards without a numpad.)
-
-A marked card shows no change at all and keeps looping normally; it only
-actually leaves the wall once it scrolls fully out of view on its own, so
-nothing else on screen ever has to make room for it disappearing. It doesn't
-touch the underlying files either: the card comes back on reload.
-
-Sample posts are client-side only: they never reach the file store, skip
-moderation and the rate limiter, and disappear on reload. Enabled automatically
-in development; on a deployed build, add `?debug=1`.
+The "Post an Opportunity" and "See the Full Board" QR pills stay visible in
+both modes, so people can scan straight off the screen.
 
 ### Reduced motion
 
@@ -254,6 +239,22 @@ transition, inverting to white background with black text on hover.
 Every foreground/background pair in the palette clears **WCAG AA (4.5:1)** against
 the surface it actually sits on; the two grey tiers were lightened from the first
 draft specifically to satisfy this.
+
+### Light/dark toggle
+
+The table above is the dark theme, which is the default. A light/dark switch
+sits in the header next to the Wall/Board toggle (both invisible until
+hovered or focused, so the venue screen stays clean — touch devices get them
+at full strength always, since there's no hover to reveal them with there).
+The choice persists in `localStorage` and applies before the page paints, so
+there's no flash of the wrong theme on reload.
+
+Every colour above is a CSS custom property (`--color-nd-*` in
+`globals.css`), not a literal value baked into components, so the light
+theme is just a second set of values for the same tokens — see the
+"Theming" section of [`CLAUDE.md`](CLAUDE.md) for how that's wired up and
+which colours needed real (not just inverted) adjustment to keep clearing
+4.5:1 against a white background instead of a black one.
 
 The logo lockup is self-hosted at `public/nordeep-logo.png` (downloaded from
 nordeep.com) so the wall does not depend on a third-party request at render time.
@@ -291,13 +292,14 @@ src/
     SubmissionForm.tsx       validation, honeypot, character counter
     AdminClient.tsx          moderation queue and inline editor
     Modal.tsx                focus trap, Escape, scroll lock
+    ThemeToggle.tsx          light/dark switch, applies + persists the choice
   lib/
     repository.ts            data access - one JSON file per post under DATA_DIR
     validation.ts            one validator, used by form, API and moderator edits
     confetti.ts              canvas party poppers, no dependency
-    debug-samples.ts         sample posts behind the numpad shortcuts
     types.ts                 opportunity types, work modes, field limits
     query.ts                 board state ⇄ URL query string
+    theme.ts                 storage key + the pre-hydration theme-init script
 data/
   pending/ live/ rejected/    post files, one per folder per status (gitignored)
 ```

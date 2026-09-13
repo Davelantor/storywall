@@ -9,7 +9,8 @@ Deep Tech Business Summit (16–17 September 2026, Espoo). Anyone at the event
 posts an opportunity; everyone can browse and contact the poster.
 
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4. Posts are
-stored as files on disk, no database. Dark theme only — that is the brand.
+stored as files on disk, no database. Dark is the default theme (the brand),
+with an explicit light/dark toggle — see "Theming" below.
 
 | Route           | Purpose                                                        |
 | --------------- | -------------------------------------------------------------- |
@@ -98,9 +99,9 @@ moderator edits. Do not add a second one.
 
 ### The wall
 
-`WallClient.tsx` orchestrates state (items, arrivals, debug shortcuts, the
-live poll); `WallColumn.tsx` + `wall-hooks.ts` own the actual scrolling. Read
-this before touching any of them.
+`WallClient.tsx` orchestrates state (items, arrivals, the live poll);
+`WallColumn.tsx` + `wall-hooks.ts` own the actual scrolling. Read this before
+touching any of them.
 
 **Columns are fully independent.** Each `WallColumn` is its own scroll
 container — own `scrollTop`, own loop period, own hover-pause — capped to
@@ -177,8 +178,9 @@ Verify periodicity after any change by measuring every card's `offsetTop`
 against its twin one copy down, *within that column*: there must be exactly
 **one** distinct delta per column. Verify the arrival specifically by sampling
 every adjacent card pair's bounding rect at ~30ms intervals through several
-back-to-back arrivals (numpad **+** fired repeatedly) and confirming zero
-frames where one card's bottom edge passes the next one's top - check both
+back-to-back arrivals (approve a few pending posts in `/admin` in quick
+succession) and confirming zero frames where one card's bottom edge passes
+the next one's top - check both
 within a copy and across a copy boundary (the last card of one copy against
 the first card of the next), since the overlap this guards against only
 shows up at that boundary.
@@ -272,39 +274,14 @@ Hiding is scoped to `[data-reveal="on"]`, set in a layout effect, so a JS
 failure leaves cards visible rather than at `opacity: 0` forever. A viewport
 sweep backs up the IntersectionObserver, which browsers suppress when hidden.
 
-**Removal.** No animation at all - the opposite instinct from an arrival.
-`WallClient.removeCard(id)` adds the id to a `pendingRemoval` set and renders
-nothing differently: the card keeps scrolling exactly as before, in every
-loop copy, until it leaves on its own. A 400ms interval
-(`REMOVAL_CHECK_MS`) checks each pending id against every element still
-carrying its `data-card-id`, using each one's own `.nd-wall-column`
-ancestor for the bounds - a plain viewport check would treat a card that has
-scrolled below one column's clipped bottom as "visible" because a neighbour
-column happens to run taller. Only once *no* rendered copy of that id
-overlaps its own column's bounds does the check actually filter it out of
-`items`. This was a deliberate correction from an earlier shrink-to-zero
-attempt: any animated collapse changes the column's live content height
-mid-flight, and that height *is* the loop's period - shrinking it while
-other cards share the same period moved cards that were never marked for
-removal. Never dropping the item's footprint at all, only its rendered
-existence once it's already outside the clipped area, is what keeps every
-other card untouched.
-
-Dropping an id from `items` still changes that column's `--nd-period` by
-one card's footprint (see the "Column slack" note above on why compensation
-of that shift can only anchor one loop copy exactly), so the check also
-withholds the drop while the column's own viewport straddles two copies -
-`Math.floor(scrollTop / period) !== Math.floor((scrollTop + clientHeight - 1)
-/ period)` - so the compensation that runs in `WallColumn`'s `measure()` has
-zero residual by construction when the drop lands. A column sparse enough
-that a full period never fits under one viewport height would straddle
-forever, so a pending id stuck past `REMOVAL_STRADDLE_TIMEOUT_MS` (6s) is
-dropped anyway rather than left pending indefinitely.
-
-Several ids can be pending removal at once - each is independent, there is
-no queue. Reduced motion skips the wait entirely: `removeCard` filters the
-item out of `items` immediately, since there is no scroll for it to
-disappear into.
+**Removal.** No animation at all. `WallClient.removeCardImmediately(id)`
+drops the item from `items` (and from `queue`, `pinned`, `arrived`,
+`settled`, and cancels its flight if it's the one currently mid-arrival) the
+moment the live poll notices a previously-`live` post is no longer in the
+server's response - a moderator pulling or rejecting it. Every branch is a
+functional update or a no-op, so the callback has no dependencies and stays
+referentially stable across renders, safe to call from the poll's interval
+closure.
 
 ### Card variants
 
@@ -322,24 +299,68 @@ relies on the card being positioned (`.nd-card` sets `position: relative`), and
 anything inside that must stay clickable needs `relative z-10`. The focus ring
 is drawn on the overlay so it outlines the clickable area.
 
-### Debug shortcuts
+### Theming
 
-On `/wall`, **numpad +** injects a ready-made sample post
-(`src/lib/debug-samples.ts`) straight into the arrival queue, **numpad −**
-removes all of them (instantly, no wait - a hard reset for testing, not a
-rehearsal of removal itself), and **Delete** (or Backspace) marks one random
-currently-visible card for removal - debug or real, any card on the wall,
-since removal isn't debug-id-scoped the way the sample posts are. Client-side
-only: never touches the database, skips the rate limiter and moderation, and
-vanishes on reload. Enabled in development always; in production only with
-`?debug=1`.
+Every colour token in `globals.css` (`--color-nd-*`) is a semantic role -
+page background, heading text, body text, three surface tiers, two border
+tiers - not a literal shade, and the whole app is built on those roles via
+Tailwind utilities (`bg-nd-surface`, `text-nd-muted`, `border-nd-line`, ...).
+The light theme is nothing but a second set of values for the same tokens,
+under `:root[data-theme="light"]` in `globals.css` - it re-themes everything
+built on those utilities at once, with no per-component branching. Dark is
+the default (`:root`'s own values, with no attribute needed); light is an
+explicit opt-in.
+
+`src/lib/theme.ts` holds the storage key (`nd-theme` in `localStorage`) and
+`THEME_INIT_SCRIPT`, a small blocking script run inline in `<head>`
+(`layout.tsx`) that sets `data-theme` on `<html>` *before* hydration -
+deciding the theme in a React effect instead would paint the default theme
+first and visibly flip it. `ThemeToggle.tsx` (styled to match the Wall/Board
+`ViewToggle` beside it in `SiteHeader.tsx`) only takes over from there: it
+reads the attribute the script already set in a `useEffect` rather than
+guessing during its own initial render, which would mismatch whatever the
+server rendered.
+
+`--color-nd-accent-hi` and `--color-nd-accent-2` get real light-theme
+overrides (darkened) because both are also used as *text* - the dark-theme
+shades are light pinks/corals tuned to read against near-black surfaces, and
+fail contrast against a white one. `--color-nd-accent` doesn't need one: it
+already clears 4.5:1 on white as-is. The same problem shows up in
+`TYPE_META` (`src/lib/types.ts`): its `text` field is a literal, always-
+pastel shade used as a *background* (BoardClient's selected filter chip,
+with black foreground text - that needs it to stay light in both themes),
+while `badgeText` is the same hue used as an actual foreground colour
+(`TypeBadge`, `DetailSheet`'s "Type" field, the arrival glow border) and is
+instead a CSS custom property (`--nd-type-*-text` in `globals.css`) that
+resolves to a darkened value in light theme. Keep that split if you touch
+either - collapsing them back into one field reintroduces the contrast
+failure in one direction or the other.
+
+Two things are deliberately theme-invariant: the QR code panels on `/wall`
+stay literal `bg-white` (a QR code needs a white background to scan,
+regardless of page theme), and the brand's own button-hover rule (`.nd-btn-
+primary:hover` inverting to white background / black text) is copied
+verbatim from nordeep.com's real behaviour, not meant to flip with the
+page's theme.
+
+### Header controls visibility
+
+`.nd-header-controls` in `globals.css` wraps `ThemeToggle` and `ViewToggle`
+in `SiteHeader.tsx` and hides both at `opacity: 0` until hovered or
+focused-within - the venue screen should read clean, not busy with controls
+nobody at the summit needs to see. Scoped to `@media (hover: hover)`: a
+touch device has no hover to reveal them with, and the view toggle is the
+only way between Wall and Board, so phones and tablets get both at full
+strength always. `opacity: 0` does not remove either nav from the tab
+order, just hides it until a keyboard user's tab order reaches it.
 
 ## Conventions
 
 - Brand tokens live at the top of `src/app/globals.css`, sampled from the
   computed styles on nordeep.com. Do not approximate new colours — reuse them.
 - Every foreground/background pair must clear **WCAG AA (4.5:1)** against the
-  surface it sits on. The grey tiers were lightened specifically for this.
+  surface it sits on, in both themes. The grey tiers were lightened
+  specifically for this.
 - Reusable styling goes in `@layer components` in `globals.css` (`.nd-btn`,
   `.nd-card`, `.nd-chip`, `.nd-slot`, `.nd-card-target`). Tailwind utilities
   for one-offs.

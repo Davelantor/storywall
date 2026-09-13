@@ -17,20 +17,13 @@ export const metadata: Metadata = {
 };
 
 type Props = {
-  searchParams: Promise<{ kiosk?: string | string[]; debug?: string | string[] }>;
+  searchParams: Promise<{ kiosk?: string | string[] }>;
 };
 
 export default async function WallPage({ searchParams }: Props) {
   const params = await searchParams;
   const kioskParam = Array.isArray(params.kiosk) ? params.kiosk[0] : params.kiosk;
   const kiosk = kioskParam === "1" || kioskParam === "true";
-
-  // Arrival rehearsal shortcuts: always on locally, and opt-in on a deployed
-  // build via ?debug=1 so the venue screen cannot be filled with samples by
-  // anyone who wanders past the keyboard.
-  const debugParam = Array.isArray(params.debug) ? params.debug[0] : params.debug;
-  const debug =
-    process.env.NODE_ENV !== "production" || debugParam === "1";
 
   const [feed, qr, boardQr] = await Promise.all([
     listOpportunities({ limit: WALL_MAX_ITEMS, offset: 0, sort: "newest" }),
@@ -75,7 +68,6 @@ export default async function WallPage({ searchParams }: Props) {
           <WallClient
             initialItems={items}
             kiosk={kiosk}
-            debug={debug}
             qrSvg={qr}
             boardQrSvg={boardQr}
           />

@@ -17,14 +17,35 @@ export type WorkMode = (typeof WORK_MODES)[number];
 export const STATUSES = ["pending", "live", "rejected"] as const;
 export type Status = (typeof STATUSES)[number];
 
-/** Label + colour treatment for each opportunity type badge. */
+/**
+ * Label + colour treatment for each opportunity type badge.
+ *
+ * `text` is a literal, always-pastel shade of the brand hue - BoardClient's
+ * selected filter chip uses it as a *background* with black foreground text,
+ * which needs it to stay light regardless of theme. `badgeText` is the same
+ * hue as an actual foreground colour, used wherever the brand hue is text
+ * rather than a fill: the pastel dark-theme shade reads fine against a
+ * near-black card but fails contrast against the light theme's near-white
+ * one, so it's a CSS custom property (see `--nd-type-*-text` in
+ * globals.css) that resolves differently per theme rather than a literal.
+ * `border`/`bg`/`glow` are translucent tints of the same hue and read fine
+ * as decoration (not text) against either surface, so they stay literal too.
+ */
 export const TYPE_META: Record<
   OpportunityType,
-  { label: string; text: string; border: string; bg: string; glow: string }
+  {
+    label: string;
+    text: string;
+    badgeText: string;
+    border: string;
+    bg: string;
+    glow: string;
+  }
 > = {
   job_opening: {
     label: "Job Opening",
     text: "#FF5C8A",
+    badgeText: "var(--nd-type-job_opening-text)",
     border: "rgba(228, 29, 92, 0.55)",
     bg: "rgba(228, 29, 92, 0.14)",
     glow: "rgba(228, 29, 92, 0.55)",
@@ -32,6 +53,7 @@ export const TYPE_META: Record<
   co_founder: {
     label: "Co-Founder",
     text: "#FF9A72",
+    badgeText: "var(--nd-type-co_founder-text)",
     border: "rgba(244, 82, 77, 0.55)",
     bg: "rgba(244, 82, 77, 0.14)",
     glow: "rgba(244, 82, 77, 0.55)",
@@ -39,6 +61,7 @@ export const TYPE_META: Record<
   pilot_partnership: {
     label: "Pilot / Partnership",
     text: "#7FD4FF",
+    badgeText: "var(--nd-type-pilot_partnership-text)",
     border: "rgba(56, 168, 235, 0.55)",
     bg: "rgba(56, 168, 235, 0.14)",
     glow: "rgba(56, 168, 235, 0.55)",
@@ -46,6 +69,7 @@ export const TYPE_META: Record<
   research_collaboration: {
     label: "Research Collaboration",
     text: "#C9A9FF",
+    badgeText: "var(--nd-type-research_collaboration-text)",
     border: "rgba(150, 110, 240, 0.55)",
     bg: "rgba(150, 110, 240, 0.14)",
     glow: "rgba(150, 110, 240, 0.55)",

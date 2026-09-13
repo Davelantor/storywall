@@ -46,6 +46,69 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Light theme
+   ---------------------------------------------------------------------------
+   Every `--color-nd-*` token above is a semantic role (page background,
+   heading text, body text, three surface tiers, two border tiers), not a
+   literal shade - the whole app is built on those roles via Tailwind
+   utilities (`bg-nd-surface`, `text-nd-muted`, ...), so overriding the
+   tokens here re-themes it everywhere at once, with no per-component
+   light/dark branching. Applied via `[data-theme="light"]` on `<html>`,
+   set before paint by the inline script in layout.tsx (see there for why).
+
+   Each pair still clears WCAG AA (4.5:1) against every surface it actually
+   sits on, same bar as the dark palette. `--color-nd-accent-hi` and
+   `--color-nd-accent-2` are darkened from their dark-theme values
+   specifically because both are also used as *text* (link/hover colours,
+   error copy) - the dark-theme shades are light pinks/corals tuned to read
+   against near-black surfaces, and fail contrast against a white one.
+   `--color-nd-accent` needs no light-theme override: it is already dark
+   enough to clear 4.5:1 on white as-is. */
+@layer base {
+  :root[data-theme="light"] {
+    --color-nd-black: #ffffff;
+    --color-nd-surface: #f6f6f6;
+    --color-nd-surface-2: #ececec;
+    --color-nd-surface-3: #e0e0e0;
+
+    --color-nd-white: #0a0a0a;
+    --color-nd-body: #2b2b2b;
+    /* Both greys are held above 4.5:1 against the lightest surface they sit
+       on (--color-nd-surface-3, #e0e0e0) - the mirror of the dark palette's
+       own rule against its darkest surface. */
+    --color-nd-muted: #595959;
+    --color-nd-faint: #6b6b6b;
+
+    --color-nd-accent-hi: #c81456;
+    --color-nd-accent-2: #c7362f;
+
+    --color-nd-line: #dcdcdc;
+    --color-nd-line-soft: #e8e8e8;
+  }
+}
+
+/* Per-type badge text colour (see TYPE_META.badgeText in src/lib/types.ts).
+   Each dark-theme value is that type's existing pastel brand shade; each
+   light-theme value is the same hue darkened until it clears 4.5:1 against
+   the light theme's translucent badge background (TYPE_META.bg, ~14% of
+   the same brand colour over --color-nd-surface, i.e. very close to white). */
+@layer base {
+  :root {
+    --nd-type-job_opening-text: #ff5c8a;
+    --nd-type-co_founder-text: #ff9a72;
+    --nd-type-pilot_partnership-text: #7fd4ff;
+    --nd-type-research_collaboration-text: #c9a9ff;
+  }
+
+  :root[data-theme="light"] {
+    --nd-type-job_opening-text: #c21350;
+    --nd-type-co_founder-text: #b23a17;
+    --nd-type-pilot_partnership-text: #0b6fa6;
+    --nd-type-research_collaboration-text: #6b3fc9;
+  }
+}
+
+/* ---------------------------------------------------------------------------
    Base
    --------------------------------------------------------------------------- */
 
@@ -287,20 +350,22 @@
     border-color: var(--color-nd-accent);
   }
 
-  /* --- View toggle ------------------------------------------------------ */
-  /* Sits at 10% until pointed at, so it stays out of the way on the venue
-     screen. Scoped to hover-capable pointers: on a touch device there is no
-     hover to reveal it with, and this is the only way between Wall and Board,
-     so phones and tablets get it at full strength. focus-within keeps it
-     reachable by keyboard, which hover alone would strand. */
+  /* --- Header controls (view toggle + theme toggle) ---------------------- */
+  /* Invisible until pointed at, so the venue screen stays clean. Scoped to
+     hover-capable pointers: on a touch device there is no hover to reveal
+     them with, and the view toggle is the only way between Wall and Board,
+     so phones and tablets get both at full strength always. focus-within
+     keeps them reachable by keyboard, which hover alone would strand -
+     opacity 0 does not remove either nav from the tab order, just hides it
+     until that tab order reaches it. */
   @media (hover: hover) {
-    .nd-view-toggle {
-      opacity: 0.1;
+    .nd-header-controls {
+      opacity: 0;
       transition: opacity 0.2s ease-in-out;
     }
 
-    .nd-view-toggle:hover,
-    .nd-view-toggle:focus-within {
+    .nd-header-controls:hover,
+    .nd-header-controls:focus-within {
       opacity: 1;
     }
   }

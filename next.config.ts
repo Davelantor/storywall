@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The dev-only build activity indicator has nothing to do with the app -
+  // don't ship it as visual noise on the venue screen while developing.
+  devIndicators: false,
   images: {
     remotePatterns: [{ protocol: "https", hostname: "nordeep.com" }],
   },

@@ -300,7 +300,7 @@ export default function BoardClient({
             <button
               type="button"
               onClick={clearFilters}
-              className="text-[12px] font-bold uppercase tracking-[0.1em] text-nd-accent-hi underline-offset-4 hover:text-white hover:underline"
+              className="text-[12px] font-bold uppercase tracking-[0.1em] text-nd-accent-hi underline-offset-4 hover:text-nd-white hover:underline"
             >
               Clear {activeCount} {activeCount === 1 ? "filter" : "filters"}
             </button>
