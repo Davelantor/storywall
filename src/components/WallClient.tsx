@@ -21,10 +21,18 @@ import {
 } from "./wall-hooks";
 
 const ARRIVAL_GLOW_MS = 2800;
-/** Quiet gap between one arrival landing and the next taking off. */
-const ARRIVAL_SPACING_MS = 2600;
+/** Quiet gap between one arrival landing and the next taking off - releasing
+ * several posts in a row should trickle onto the wall, not rush it. */
+const ARRIVAL_SPACING_MS = 5000;
 /** How long the landed card keeps its slot wrapper before rendering plainly. */
 const SLOT_TEARDOWN_MS = 700;
+/** How often to check whether a pending removal has scrolled out of view. */
+const REMOVAL_CHECK_MS = 400;
+// Safety valve for columns sparse enough that one loop period never fully
+// fits below the viewport - the straddle guard in the removal check below
+// would otherwise wait forever. Any pending id stuck straddling past this
+// many ms is dropped regardless, accepting the rare visible shift.
+const REMOVAL_STRADDLE_TIMEOUT_MS = 6000;
 
 type Arrival = { item: Opportunity; direction: "left" | "right" };
 
@@ -57,6 +65,17 @@ export default function WallClient({
   const [settled, setSettled] = useState<Set<string>>(() => new Set());
   const [pinned, setPinned] = useState<Map<string, number>>(() => new Map());
 
+  // A card marked for removal keeps rendering exactly as before - full size,
+  // full opacity, still clickable - nothing about it changes right away.
+  // Instead a periodic check (see the effect below) watches for the moment
+  // every rendered copy of it has scrolled fully out of view, and only then
+  // actually drops it from `items`. By that point nothing on screen was
+  // showing it, so the drop - and the reflow it causes - happens somewhere
+  // nobody is currently looking, rather than as a visible cut or animation.
+  const [pendingRemoval, setPendingRemoval] = useState<Set<string>>(
+    () => new Set(),
+  );
+
   const seen = useRef(new Set(initialItems.map((item) => item.id)));
 
   // Gates the CSS that hides un-revealed cards. Set in a layout effect, so it
@@ -83,6 +102,13 @@ export default function WallClient({
   /**
    * Picks a card the viewer can actually see and drops the newcomer in above
    * it, so the gap opens on screen rather than somewhere off the top.
+   *
+   * Restricted to the lower part of the viewport on purpose: every column
+   * keeps auto-scrolling upward throughout the whole arrival, so a gap that
+   * opened near the top would ride most of the way off-screen before the
+   * flight even finishes settling into it. Biasing the pick toward the lower
+   * band means the newcomer lands somewhere the viewer still has time to
+   * actually see, rather than right at the edge it's about to scroll past.
    */
   const pickLandingSpot = useCallback((): {
     column: number;
@@ -91,11 +117,12 @@ export default function WallClient({
     const row = rowRef.current;
     if (!row) return { column: 0, beforeId: null };
 
-    // Any card that overlaps the safe reading band qualifies - it doesn't
-    // need to fit inside it whole. Requiring full containment excluded every
-    // card taller than the band from ever being a candidate, which meant
-    // whichever column happened to hold the tallest cards could never be
-    // picked as a landing spot even when it was the shortest overall.
+    // Any card that overlaps the lower band qualifies - it doesn't need to
+    // fit inside it whole. Requiring full containment excluded every card
+    // taller than the band from ever being a candidate, which meant whichever
+    // column happened to hold the tallest cards could never be picked as a
+    // landing spot even when it was the shortest overall.
+    const lowerBandTop = window.innerHeight * 0.55;
     const candidates = [...row.querySelectorAll<HTMLElement>("[data-card-id]")]
       .map((el) => ({
         id: el.dataset.cardId ?? "",
@@ -103,7 +130,8 @@ export default function WallClient({
         rect: el.getBoundingClientRect(),
       }))
       .filter(
-        (c) => c.id && c.rect.bottom > 150 && c.rect.top < window.innerHeight - 60,
+        (c) =>
+          c.id && c.rect.bottom > lowerBandTop && c.rect.top < window.innerHeight - 60,
       );
 
     if (candidates.length === 0) return { column: 0, beforeId: null };
@@ -142,6 +170,188 @@ export default function WallClient({
     },
     [],
   );
+
+  /**
+   * Marks a card for removal without touching `items` yet. The card keeps
+   * rendering exactly as it was - the periodic check below is what actually
+   * drops it, once every rendered copy of it is off screen.
+   */
+  const removeCard = useCallback(
+    (id: string) => {
+      if (!items.some((item) => item.id === id)) return; // nothing to remove
+      // A card actively flying in isn't a candidate: it hasn't settled into
+      // the wall yet, and pickRemovalTarget already excludes it, but a
+      // direct call here (moderation, say) should be just as safe.
+      if (id === slotId) return;
+
+      if (reducedMotion) {
+        // No auto-scroll to eventually carry it off screen, so there's
+        // nothing to wait for - drop it immediately instead of marking it
+        // pending forever.
+        setItems((previous) => previous.filter((item) => item.id !== id));
+        return;
+      }
+
+      setPendingRemoval((previous) =>
+        previous.has(id) ? previous : new Set(previous).add(id),
+      );
+    },
+    [items, reducedMotion, slotId],
+  );
+
+  /**
+   * Drops a card the moment the poll finds it no longer `live` server-side
+   * (pulled or rejected from admin) - unlike `removeCard`, this does not wait
+   * for it to scroll out of view first. A moderator pulling a post wants it
+   * gone from the wall right away, not whenever the loop happens to carry it
+   * off screen. Every branch uses a functional update (or is a no-op if the
+   * id isn't present), so this has no dependencies and stays referentially
+   * stable across renders - safe to call from the poll's interval closure.
+   */
+  const removeCardImmediately = useCallback((id: string) => {
+    setQueue((previous) => previous.filter((item) => item.id !== id));
+    setItems((previous) => previous.filter((item) => item.id !== id));
+    setPendingRemoval((previous) => {
+      if (!previous.has(id)) return previous;
+      const next = new Set(previous);
+      next.delete(id);
+      return next;
+    });
+    setPinned((previous) => {
+      if (!previous.has(id)) return previous;
+      const next = new Map(previous);
+      next.delete(id);
+      return next;
+    });
+    setArrived((previous) => {
+      if (!previous.has(id)) return previous;
+      const next = new Set(previous);
+      next.delete(id);
+      return next;
+    });
+    setSettled((previous) => {
+      if (!previous.has(id)) return previous;
+      const next = new Set(previous);
+      next.delete(id);
+      return next;
+    });
+    setSlotId((current) => (current === id ? null : current));
+    // If this id is the one currently mid-flight, cancel the flight outright
+    // rather than let it land somewhere the moderator already pulled it from.
+    setArrival((current) => {
+      if (!current || current.item.id !== id) return current;
+      setSlotOpen(false);
+      setLanded(false);
+      return null;
+    });
+  }, []);
+
+  /** A currently-visible card not already pending removal, for the debug shortcut. */
+  const pickRemovalTarget = useCallback((): string | null => {
+    const row = rowRef.current;
+    if (!row) return null;
+
+    const candidates = [...row.querySelectorAll<HTMLElement>("[data-card-id]")]
+      .map((el) => ({ id: el.dataset.cardId ?? "", rect: el.getBoundingClientRect() }))
+      .filter(
+        (c) =>
+          c.id &&
+          c.id !== slotId &&
+          !pendingRemoval.has(c.id) &&
+          c.rect.bottom > 150 &&
+          c.rect.top < window.innerHeight - 60,
+      );
+
+    if (candidates.length === 0) return null;
+    const uniqueIds = [...new Set(candidates.map((c) => c.id))];
+    return uniqueIds[Math.floor(Math.random() * uniqueIds.length)]!;
+  }, [slotId, pendingRemoval]);
+
+  // The actual drop. Runs on an interval rather than off scroll events -
+  // every column scrolls independently, so there's no one scroll signal to
+  // hook into - checking periodically whether every rendered copy of a
+  // pending id has left its own column's visible bounds is simpler and cheap
+  // at the scale a handful of pending removals ever reaches.
+  const pendingSinceRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (pendingRemoval.size === 0) {
+      pendingSinceRef.current.clear();
+      return;
+    }
+
+    const check = () => {
+      const row = rowRef.current;
+      if (!row) return;
+
+      const now = performance.now();
+      const toDrop: string[] = [];
+      pendingRemoval.forEach((id) => {
+        const elements = [
+          ...row.querySelectorAll<HTMLElement>(`[data-card-id="${CSS.escape(id)}"]`),
+        ];
+        if (elements.length === 0) return;
+
+        const stillVisible = elements.some((el) => {
+          const column = el.closest<HTMLElement>(".nd-wall-column");
+          const bounds = column?.getBoundingClientRect();
+          const rect = el.getBoundingClientRect();
+          const top = bounds?.top ?? 0;
+          const bottom = bounds?.bottom ?? window.innerHeight;
+          return rect.bottom > top && rect.top < bottom;
+        });
+        if (stillVisible) {
+          pendingSinceRef.current.delete(id);
+          return;
+        }
+
+        // Dropping the item changes its column's loop period, which shifts
+        // every later copy - WallColumn compensates with a single scroll
+        // offset that can only anchor one copy at a time. If the viewport
+        // currently straddles two copies of this column, the un-anchored
+        // sliver would visibly jump even though the removed card itself is
+        // off screen. Waiting for a moment when the viewport sits entirely
+        // inside one copy makes the compensation exact by construction.
+        // Columns sparse enough that a whole period fits inside the
+        // viewport would straddle forever, so a card stuck waiting past
+        // REMOVAL_STRADDLE_TIMEOUT_MS is dropped anyway rather than never.
+        const column = elements[0]!.closest<HTMLElement>(".nd-wall-column");
+        if (column) {
+          const period = parseFloat(
+            getComputedStyle(column).getPropertyValue("--nd-period"),
+          );
+          if (period > 0) {
+            const viewTop = column.scrollTop;
+            const viewBottom = viewTop + column.clientHeight;
+            const straddling =
+              Math.floor(viewTop / period) !==
+              Math.floor((viewBottom - 1) / period);
+            if (straddling) {
+              const since = pendingSinceRef.current.get(id) ?? now;
+              pendingSinceRef.current.set(id, since);
+              if (now - since < REMOVAL_STRADDLE_TIMEOUT_MS) return;
+            }
+          }
+        }
+
+        pendingSinceRef.current.delete(id);
+        toDrop.push(id);
+      });
+
+      if (toDrop.length === 0) return;
+
+      setItems((previous) => previous.filter((item) => !toDrop.includes(item.id)));
+      setPendingRemoval((previous) => {
+        const next = new Set(previous);
+        toDrop.forEach((id) => next.delete(id));
+        return next;
+      });
+    };
+
+    check();
+    const interval = window.setInterval(check, REMOVAL_CHECK_MS);
+    return () => window.clearInterval(interval);
+  }, [pendingRemoval]);
 
   // Release one queued post at a time, once the previous has landed.
   useEffect(() => {
@@ -224,6 +434,7 @@ export default function WallClient({
     setSlotId((previous) => (previous && isDebugId(previous) ? null : previous));
     setArrived(keep);
     setSettled(keep);
+    setPendingRemoval(keep);
     setPinned((previous) => {
       const next = new Map(previous);
       for (const id of next.keys()) if (isDebugId(id)) next.delete(id);
@@ -242,7 +453,12 @@ export default function WallClient({
 
       // Numpad first; the plain keys are there for laptops without one.
       const add = event.code === "NumpadAdd" || event.key === "+";
-      const remove = event.code === "NumpadSubtract" || event.key === "-";
+      const clear = event.code === "NumpadSubtract" || event.key === "-";
+      // Delete rather than a numpad key: "mark for removal" isn't part of
+      // the same +/- pair (clear wipes every sample instantly; this quietly
+      // schedules exactly one card, debug or real) and reads better on its
+      // own key. Nothing visibly happens until it scrolls out of view.
+      const markForRemoval = event.key === "Delete" || event.key === "Backspace";
 
       if (add) {
         event.preventDefault();
@@ -251,15 +467,19 @@ export default function WallClient({
         seen.current.add(post.id);
         // Straight into the queue, so it takes the same route as a real post.
         setQueue((previous) => [...previous, post]);
-      } else if (remove) {
+      } else if (clear) {
         event.preventDefault();
         clearDebugPosts();
+      } else if (markForRemoval) {
+        event.preventDefault();
+        const target = pickRemovalTarget();
+        if (target) removeCard(target);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [debug, clearDebugPosts]);
+  }, [debug, clearDebugPosts, pickRemovalTarget, removeCard]);
 
   /* -------------------------------------------------------------- live feed */
 
@@ -279,12 +499,25 @@ export default function WallClient({
 
         setLiveError(false);
 
-        const fresh = page.items.filter((item) => !seen.current.has(item.id));
-        if (fresh.length === 0) return;
+        const presentIds = new Set(page.items.map((item) => item.id));
 
+        const fresh = page.items.filter((item) => !seen.current.has(item.id));
         fresh.forEach((item) => seen.current.add(item.id));
         // Queued rather than shown: each one gets its own entrance.
-        setQueue((previous) => [...previous, ...fresh]);
+        if (fresh.length > 0) setQueue((previous) => [...previous, ...fresh]);
+
+        // Anything we previously believed was live but the server no longer
+        // returns has been pulled or rejected - take it off the wall right
+        // away. Debug samples are excluded: they were never really in `live/`
+        // to begin with, so they'd otherwise look "gone" on every poll.
+        seen.current.forEach((id) => {
+          if (isDebugId(id) || presentIds.has(id)) return;
+          seen.current.delete(id);
+          // Forgetting the id (rather than leaving it seen forever) also
+          // means a post that gets pulled and later re-released is treated
+          // as fresh again instead of silently never reappearing.
+          removeCardImmediately(id);
+        });
       } catch {
         if (!cancelled) setLiveError(true);
       }
@@ -295,7 +528,7 @@ export default function WallClient({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [removeCardImmediately]);
 
   return (
     <>
@@ -361,44 +594,37 @@ export default function WallClient({
       {debug && (
         <p className="fixed bottom-4 left-4 z-40 rounded-[4px] border border-nd-line bg-nd-surface px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-nd-muted">
           Debug · <span className="text-nd-white">+</span> add sample ·{" "}
-          <span className="text-nd-white">−</span> clear samples
+          <span className="text-nd-white">−</span> clear samples ·{" "}
+          <span className="text-nd-white">Del</span> mark one for removal
           {queue.length > 0 && (
             <span className="text-nd-accent-hi"> · {queue.length} queued</span>
           )}
         </p>
       )}
 
-      {/* Fixed call to action: one panel holding the QR of the submission form
-          and the button, sized so the code stays scannable from a few metres
-          off the venue screen. Below sm the QR drops away and the pill stands
-          on its own, since a phone is already holding the page. */}
+      {/* Fixed call to action: just the QR of the submission form under its
+          title, sized so the code stays scannable from a few metres off the
+          venue screen. No button - the whole panel is the link, the QR is
+          the visual draw. */}
       <div className="fixed bottom-4 right-4 z-40 sm:bottom-6 sm:right-6">
-        <div className="flex items-center gap-3 rounded-[8px] shadow-lg shadow-black/50 sm:border sm:border-nd-line sm:bg-nd-surface sm:p-3">
+        <Link
+          href="/board/new"
+          className="flex flex-col items-center gap-2 rounded-[8px] px-3 py-2.5 shadow-lg shadow-black/50 transition-opacity duration-200 hover:opacity-80 sm:w-[168px] sm:border sm:border-nd-line sm:bg-nd-surface xl:w-[192px]"
+        >
+          <span className="whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.14em] text-nd-white">
+            Post an Opportunity
+          </span>
           {qrSvg && (
             <div
-              className="hidden h-[72px] w-[72px] shrink-0 rounded-[4px] bg-white p-1.5 sm:block xl:h-20 xl:w-20 [&>svg]:h-full [&>svg]:w-full"
+              className="hidden aspect-square w-full shrink-0 rounded-[4px] bg-white p-1.5 sm:block [&>svg]:h-full [&>svg]:w-full"
               // Generated server-side by the qrcode package from our own URL.
               dangerouslySetInnerHTML={{ __html: qrSvg }}
-              // Decorative: the adjacent link is the accessible equivalent and
-              // goes to exactly the same place, so announcing both is noise.
+              // Decorative: the enclosing link is the accessible equivalent
+              // and goes to exactly the same place, so announcing both is noise.
               aria-hidden="true"
             />
           )}
-
-          <div className="flex flex-col items-start gap-1.5">
-            <Link
-              href="/board/new"
-              className="nd-btn nd-btn-primary rounded-full px-5 py-2.5 text-[13px]"
-            >
-              + Post an Opportunity
-            </Link>
-            {qrSvg && (
-              <span className="hidden pl-1 text-[9px] font-bold uppercase tracking-[0.12em] text-nd-muted sm:block">
-                Or scan with your phone
-              </span>
-            )}
-          </div>
-        </div>
+        </Link>
       </div>
 
       <DetailSheet opportunity={selected} onClose={() => setSelected(null)} />

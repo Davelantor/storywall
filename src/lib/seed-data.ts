@@ -4,9 +4,8 @@ import type { OpportunityInput } from "./types";
  * Seed opportunities for day one of the summit, so the wall is never empty.
  * minutesAgo is used to spread created_at across the last ~two days.
  *
- * This module is the single source of truth: supabase/seed.sql is generated
- * from it by scripts/generate-seed-sql.mjs, and the offline demo store reads
- * it directly.
+ * repository.ts writes these straight into data/live/ the first time it runs
+ * against a fresh (nonexistent) DATA_DIR.
  */
 export type SeedOpportunity = OpportunityInput & { minutesAgo: number };
 
@@ -115,36 +114,6 @@ export const SEED_OPPORTUNITIES: SeedOpportunity[] = [
     contact_note: "Booth D31",
     jd_url: null,
     minutesAgo: 735,
-  },
-  {
-    title: "ML Systems Engineer, Available From November",
-    organisation: "Independent, ex-Graphcore",
-    type: "talent_available",
-    detail:
-      "Six years on compiler and interconnect work for AI accelerators, most recently distributed training on 4k-chip clusters. Finishing a contract in October and want to stay in deep tech hardware rather than move to another web shop.",
-    tags: ["AI Infrastructure", "Semiconductors"],
-    location: "Oslo, Norway",
-    work_mode: "remote",
-    contact_email: null,
-    contact_url: "https://www.linkedin.com/in/example-ml-engineer",
-    contact_note: null,
-    jd_url: null,
-    minutesAgo: 880,
-  },
-  {
-    title: "Quantum Algorithms PhD Graduating in December",
-    organisation: "University of Copenhagen",
-    type: "talent_available",
-    detail:
-      "Thesis on variational algorithms for lattice QCD, two first-author papers. I would rather join an early quantum software team than take a postdoc. Open to Helsinki, Stockholm or Copenhagen, and happy to start part-time now.",
-    tags: ["Quantum"],
-    location: "Copenhagen, Denmark",
-    work_mode: "hybrid",
-    contact_email: "phd.candidate@example-ku.dk",
-    contact_url: null,
-    contact_note: "Find me at the poster session",
-    jd_url: null,
-    minutesAgo: 1105,
   },
   {
     title: "Joint Call: Mid-Infrared Sensing for Emissions",

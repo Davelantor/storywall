@@ -53,9 +53,10 @@ async function AuthenticatedQueue() {
     <AdminClient
       initialItems={queue.data}
       initialCounts={
-        counts.ok ? counts.data : { pending: queue.data.length, approved: 0, rejected: 0 }
+        counts.ok
+          ? counts.data
+          : { pending: queue.data.length, live: 0, rejected: 0 }
       }
-      demo={queue.demo}
     />
   );
 }
@@ -77,9 +78,6 @@ function SetupNotice() {
         </li>
         <li className="rounded-[3px] border border-nd-line-soft bg-nd-black px-3 py-2 font-mono text-nd-body">
           ADMIN_SESSION_SECRET
-        </li>
-        <li className="rounded-[3px] border border-nd-line-soft bg-nd-black px-3 py-2 font-mono text-nd-body">
-          SUPABASE_SERVICE_ROLE_KEY
         </li>
       </ul>
     </div>

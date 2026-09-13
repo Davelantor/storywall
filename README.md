@@ -14,10 +14,11 @@ NORDEEP team before it appears.
 | `/wall?kiosk=1` | Same, with the chrome hidden and the pointer hidden when idle        |
 | `/board`     | The practical feed: search, filters, sort, submission modal             |
 | `/board/new` | Standalone submission form (this is what the QR code points at)         |
-| `/admin`     | Moderation queue — approve / reject / edit                              |
+| `/admin`     | Moderation queue — approve / release to wall / reject / edit            |
 
-Built with Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 and
-Supabase. Dark theme only — that is the brand.
+Built with Next.js 16 (App Router), React 19, TypeScript and Tailwind CSS 4.
+Posts are stored as files on disk — one JSON file per post. Dark theme only —
+that is the brand.
 
 ---
 
@@ -29,9 +30,10 @@ npm run dev
 ```
 
 Open <http://localhost:3000>. **No configuration is required to see it running.**
-Without Supabase credentials the app serves an in-memory demo store seeded with
-the 12 sample opportunities. Submissions and moderation work in demo mode but
-are lost when the server restarts, and `/admin` says so at the top of the queue.
+The first time it runs, it seeds `./data/live/` with the 12 sample
+opportunities so the wall and board are never empty. Posts persist across
+restarts (they're just files on disk) but the `./data` folder is gitignored,
+so a fresh checkout re-seeds again.
 
 To exercise `/admin` locally, add an `.env.local`:
 
@@ -44,19 +46,14 @@ ADMIN_SESSION_SECRET=another-long-random-string-32-chars-plus
 
 ## Environment variables
 
-Copy `.env.example` to `.env.local` (local) or paste into Vercel's project
-settings (deployed).
+Copy `.env.example` to `.env.local` (local) or set them on the host (deployed).
 
-| Variable                        | Required | Scope  | What it does                                                                 |
-| ------------------------------- | -------- | ------ | ---------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | yes\*    | public | Supabase project URL                                                          |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes\*    | public | Anon key. Safe to expose — every capability is bounded by the RLS policies    |
-| `SUPABASE_SERVICE_ROLE_KEY`     | yes\*    | server | Bypasses RLS. Used **only** by `/admin` moderation. Never prefix `NEXT_PUBLIC_` |
-| `ADMIN_PASSWORD`                | yes      | server | Password for the moderation queue                                             |
-| `ADMIN_SESSION_SECRET`          | yes      | server | HMAC key for the admin session cookie (32+ chars)                             |
-| `NEXT_PUBLIC_SITE_URL`          | yes      | public | Public origin. Used for Open Graph URLs and the QR code target                |
-
-\* Omit the three Supabase variables and the app runs against the demo store.
+| Variable               | Required | Scope  | What it does                                                          |
+| ---------------------- | -------- | ------ | ------------------------------------------------------------------------ |
+| `DATA_DIR`             | no       | server | Where post files live. Defaults to `./data`. Point it at a persistent, backed-up path in production |
+| `ADMIN_PASSWORD`       | yes      | server | Password for the moderation queue                                    |
+| `ADMIN_SESSION_SECRET` | yes      | server | HMAC key for the admin session cookie (32+ chars)                    |
+| `NEXT_PUBLIC_SITE_URL` | yes      | public | Public origin. Used for Open Graph URLs and the QR code target       |
 
 Generate the two admin secrets with:
 
@@ -66,53 +63,44 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 ---
 
-## Database setup
+## Data storage
 
-1. Create a Supabase project.
-2. **SQL Editor → New query →** paste [`supabase/schema.sql`](supabase/schema.sql) → Run.
-   This creates the enums, the `opportunities` table, indexes, the `approved_at`
-   trigger, and the row-level security policies.
-3. Paste [`supabase/seed.sql`](supabase/seed.sql) → Run. This inserts the 12
-   approved sample opportunities so the wall is never empty on day one. It is
-   safe to re-run: it clears its own rows first and never touches real posts.
+Every post is a JSON file under `DATA_DIR` (`./data` by default), in one of
+three folders that double as its moderation state:
 
-Or with the Supabase CLI:
-
-```bash
-supabase db execute --file supabase/schema.sql
-supabase db execute --file supabase/seed.sql
 ```
+data/
+  pending/    just submitted, awaiting review
+  live/       publicly visible - this is what /board and /wall read
+  rejected/   declined, kept for audit
+```
+
+Moving a post between stages (approve — which puts it straight on the wall,
+or reject) moves its file between folders; nothing else reads or writes
+these files but the app itself. Because it's a real filesystem, this needs a
+host with persistent disk (a VPS, not a serverless/ephemeral deployment) and
+its own backup plan — a nightly rsync/tar snapshot of `DATA_DIR` is enough at
+this scale.
 
 ### Security model
 
-Enforced in the database, not in the client:
-
-| Role                   | SELECT                    | INSERT                        | UPDATE / DELETE |
-| ---------------------- | ------------------------- | ----------------------------- | --------------- |
-| `anon` / `authenticated` | only `status = 'approved'` | only `status = 'pending'`     | denied          |
-| `service_role`         | everything (bypasses RLS) | everything                    | everything      |
-
-So a public reader cannot see a pending or rejected post even by crafting their
-own query, and a public writer cannot publish straight to the wall. The
-`/admin` routes are the only code path that uses the service role, and each one
-checks the signed admin session cookie before touching the database.
-
-`supabase/seed.sql` is generated from `src/lib/seed-data.ts` so the demo store
-and the database seed can never drift apart. Regenerate after editing it:
-
-```bash
-node scripts/generate-seed-sql.mjs
-```
+There's no database enforcing the pending/live/rejected boundary, so
+the API routes are the only thing that does: `GET /api/opportunities` (public)
+only ever reads `live/`; `POST /api/opportunities` (public) only ever writes
+into `pending/`; every route under `/api/admin/*` checks the signed admin
+session cookie before touching any other folder. Keep that boundary in mind
+before adding a new read/write path — there's no second layer behind it.
 
 ---
 
-## Deploying to Vercel
+## Deploying
 
-1. Push this repository to GitHub.
-2. **Vercel → Add New → Project →** import the repo. The framework preset is
-   detected automatically; no build settings need changing.
-3. Add the environment variables from the table above.
-4. Deploy.
+1. Provision a host with persistent disk (a VPS, not a serverless platform —
+   see [Data storage](#data-storage)).
+2. Set the environment variables from the table above, pointing `DATA_DIR` at
+   a real, backed-up path.
+3. `npm install && npm run build && npm run start` (or run it behind your
+   process manager / reverse proxy of choice).
 
 Set `NEXT_PUBLIC_SITE_URL` to the final public origin **before** the production
 deploy — the QR code on the wall and the Open Graph URLs are built from it.
@@ -125,9 +113,8 @@ deploy — the QR code on the wall and the Open Graph URLs are built from it.
 - **Per-IP backstop** — 3 per hour, in-memory, in `src/lib/rate-limit.ts`.
 
 There is deliberately **no CAPTCHA**: it kills conversion at events, and every
-post is human-reviewed anyway. Note that the IP backstop is per serverless
-instance, so it is best-effort rather than a hard guarantee. Swap it for
-Upstash/Redis if you ever need one.
+post is human-reviewed anyway. Note that the IP backstop is per server
+process, so a process restart resets it.
 
 ---
 
@@ -185,7 +172,7 @@ loop length has nothing to do with any other's, and a card added to one
 column never affects what any other column is doing.
 
 Because a loop needs finite, repeating content, `/wall` loads the most recent
-**100 approved posts** up front rather than paging. Posts beyond the
+**100 live posts** up front rather than paging. Posts beyond the
 hundredth do not reach the wall — they are all still on the Board, which
 pages normally. There is no footer on `/wall`: with the page fixed to the
 screen and never scrolling, one below the fold would never be reachable.
@@ -198,7 +185,7 @@ no delay either way. Hovering a card in one column has no effect on any
 other. Nothing else — clicking, typing, a wheel nudge — pauses or wakes a
 column; hovering a card is the only thing that does.
 
-### When a post is approved
+### When a post goes live
 
 New posts do not simply appear. Each one is queued and given its own entrance:
 
@@ -209,7 +196,7 @@ New posts do not simply appear. Each one is queued and given its own entrance:
 3. A **gap opens** in the wall and the card settles into it, then scrolls on
    with everything else.
 
-Posts are released one at a time, so several approvals in the same minute
+Posts are released one at a time, so several releases in the same minute
 arrive in turn rather than all at once.
 
 ### Kiosk mode
@@ -221,13 +208,19 @@ seconds of no input.
 The "+ Post an Opportunity" pill and its QR code stay visible in both modes, so
 people can scan the submission form straight off the screen.
 
-### Rehearsing an arrival
+### Rehearsing an arrival or removal
 
 On `/wall`, **numpad +** injects a ready-made sample post into the arrival
-queue and **numpad −** removes every sample again. (Plain `+` and `-` work too,
-for keyboards without a numpad.)
+queue, **numpad −** clears every sample instantly, and **Delete** marks one
+random visible card for removal - any card, sample or real. (Plain `+` and
+`-` work too, for keyboards without a numpad.)
 
-These samples are client-side only: they never reach the database, skip
+A marked card shows no change at all and keeps looping normally; it only
+actually leaves the wall once it scrolls fully out of view on its own, so
+nothing else on screen ever has to make room for it disappearing. It doesn't
+touch the underlying files either: the card comes back on reload.
+
+Sample posts are client-side only: they never reach the file store, skip
 moderation and the rate limiter, and disappear on reload. Enabled automatically
 in development; on a deployed build, add `?debug=1`.
 
@@ -283,7 +276,7 @@ src/
     admin/page.tsx           login gate → AdminClient
     api/opportunities/       GET paged public feed · POST public submission
     api/admin/session/       POST sign in · DELETE sign out
-    api/admin/moderate/      GET queue · POST approve/reject · PATCH edit
+    api/admin/moderate/      GET queue · POST approve/release/reject · PATCH edit
     globals.css              brand tokens and component classes
     opengraph-image.tsx      generated LinkedIn/social preview card
   components/
@@ -298,17 +291,14 @@ src/
     AdminClient.tsx          moderation queue and inline editor
     Modal.tsx                focus trap, Escape, scroll lock
   lib/
-    repository.ts            data access (Supabase, or the demo store)
+    repository.ts            data access - one JSON file per post under DATA_DIR
     validation.ts            one validator, used by form, API and moderator edits
     confetti.ts              canvas party poppers, no dependency
     debug-samples.ts         sample posts behind the numpad shortcuts
     types.ts                 opportunity types, work modes, field limits
     query.ts                 board state ⇄ URL query string
-supabase/
-  schema.sql                 tables, indexes, triggers, RLS policies
-  seed.sql                   12 sample opportunities (generated)
-scripts/
-  generate-seed-sql.mjs      regenerates seed.sql from src/lib/seed-data.ts
+data/
+  pending/ live/ rejected/    post files, one per folder per status (gitignored)
 ```
 
 ---

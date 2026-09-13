@@ -2,7 +2,6 @@ export const OPPORTUNITY_TYPES = [
   "job_opening",
   "co_founder",
   "pilot_partnership",
-  "talent_available",
   "research_collaboration",
 ] as const;
 
@@ -11,7 +10,11 @@ export type OpportunityType = (typeof OPPORTUNITY_TYPES)[number];
 export const WORK_MODES = ["on_site", "hybrid", "remote"] as const;
 export type WorkMode = (typeof WORK_MODES)[number];
 
-export const STATUSES = ["pending", "approved", "rejected"] as const;
+// Three lifecycle stages: a submission is "pending" review, then a moderator
+// either approves it straight onto the public wall/board ("live") or turns
+// it away ("rejected"). There is deliberately no separate staging status
+// between review and public - approving *is* releasing.
+export const STATUSES = ["pending", "live", "rejected"] as const;
 export type Status = (typeof STATUSES)[number];
 
 /** Label + colour treatment for each opportunity type badge. */
@@ -39,13 +42,6 @@ export const TYPE_META: Record<
     border: "rgba(56, 168, 235, 0.55)",
     bg: "rgba(56, 168, 235, 0.14)",
     glow: "rgba(56, 168, 235, 0.55)",
-  },
-  talent_available: {
-    label: "Talent Available",
-    text: "#8DE8B4",
-    border: "rgba(45, 190, 120, 0.55)",
-    bg: "rgba(45, 190, 120, 0.14)",
-    glow: "rgba(45, 190, 120, 0.55)",
   },
   research_collaboration: {
     label: "Research Collaboration",

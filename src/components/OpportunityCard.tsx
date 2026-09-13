@@ -208,15 +208,16 @@ export default function OpportunityCard({
           : undefined
       }
     >
-      {/* The Wall is stripped back to title, detail, location and contact. The
-          Board keeps the badge, organisation, tags and timestamp, because its
-          filter chips and Organisation A-Z sort act on exactly those fields. */}
-      {!isWall && <TypeBadge type={opportunity.type} className="self-start" />}
+      {/* The Wall shows the type badge but stays stripped of organisation,
+          tags and timestamp otherwise. The Board keeps all of those, because
+          its filter chips and Organisation A-Z sort act on exactly those
+          fields. */}
+      <TypeBadge type={opportunity.type} className="self-start" />
 
       <h3
         className={cn(
           "font-bold leading-[1.15] text-nd-white",
-          isWall ? "text-[19px] xl:text-[21px]" : "mt-3 text-[17px]",
+          isWall ? "mt-3 text-[19px] xl:text-[21px]" : "mt-3 text-[17px]",
         )}
       >
         {onOpen ? (

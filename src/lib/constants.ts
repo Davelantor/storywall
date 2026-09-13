@@ -13,4 +13,4 @@ export const WALL_MAX_ITEMS = 100;
 export const BOARD_PAGE_SIZE = 30;
 
 /** How often the wall asks for newly approved posts. */
-export const POLL_INTERVAL_MS = 20_000;
+export const POLL_INTERVAL_MS = 5_000;

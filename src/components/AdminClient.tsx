@@ -23,21 +23,16 @@ import { TypeBadge } from "./OpportunityCard";
 
 const STATUS_LABEL: Record<Status, string> = {
   pending: "Pending review",
-  approved: "On the wall",
+  live: "On the wall",
   rejected: "Rejected",
 };
 
 type Props = {
   initialItems: ModeratedOpportunity[];
   initialCounts: Record<Status, number>;
-  demo: boolean;
 };
 
-export default function AdminClient({
-  initialItems,
-  initialCounts,
-  demo,
-}: Props) {
+export default function AdminClient({ initialItems, initialCounts }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<Status>("pending");
   const [items, setItems] = useState(initialItems);
@@ -111,18 +106,12 @@ export default function AdminClient({
         <div>
           <h1 className="nd-display text-[30px]">Moderation queue</h1>
           <p className="mt-1.5 text-[14px] text-nd-muted">
-            Approve a post and it appears on the wall within 20 seconds.
+            Approving a post puts it straight on the wall — it appears there
+            within a few seconds.
           </p>
         </div>
         <SignOutButton />
       </div>
-
-      {demo && (
-        <p className="mt-6 rounded-[4px] border border-nd-line bg-nd-surface p-4 text-[13px] text-nd-muted">
-          Running on in-memory demo data. Moderation decisions here last only
-          until the server restarts.
-        </p>
-      )}
 
       {/* Toggle buttons rather than an ARIA tablist: there is one shared panel
           below, and aria-pressed carries the state honestly without needing
@@ -211,24 +200,24 @@ export default function AdminClient({
               </dl>
 
               <div className="mt-5 flex flex-wrap gap-2 border-t border-nd-line-soft pt-4">
-                {item.status !== "approved" && (
+                {item.status === "pending" && (
                   <button
                     type="button"
                     className="nd-btn nd-btn-primary"
                     disabled={busyId === item.id}
-                    onClick={() => moderate(item.id, "approved")}
+                    onClick={() => moderate(item.id, "live")}
                   >
                     Approve
                   </button>
                 )}
-                {item.status !== "rejected" && (
+                {item.status === "live" && (
                   <button
                     type="button"
                     className="nd-btn nd-btn-quiet"
                     disabled={busyId === item.id}
-                    onClick={() => moderate(item.id, "rejected")}
+                    onClick={() => moderate(item.id, "pending")}
                   >
-                    Reject
+                    Pull from wall
                   </button>
                 )}
                 {item.status === "rejected" && (
@@ -239,6 +228,16 @@ export default function AdminClient({
                     onClick={() => moderate(item.id, "pending")}
                   >
                     Back to pending
+                  </button>
+                )}
+                {item.status !== "rejected" && (
+                  <button
+                    type="button"
+                    className="nd-btn nd-btn-quiet"
+                    disabled={busyId === item.id}
+                    onClick={() => moderate(item.id, "rejected")}
+                  >
+                    Reject
                   </button>
                 )}
                 <button

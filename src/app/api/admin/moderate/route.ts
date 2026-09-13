@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json(
-    { items: result.data, demo: result.demo },
+    { items: result.data },
     { headers: { "cache-control": "no-store" } },
   );
 }

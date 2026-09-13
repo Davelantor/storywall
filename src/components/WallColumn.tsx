@@ -106,11 +106,59 @@ export default function WallColumn({
       // Rounded up to a whole pixel: content heights are fractional, and a
       // fractional period would let the copies drift a pixel apart.
       const next = Math.ceil(natural) + CARD_GAP_PX;
+      const previousPeriod = periodRef.current;
       periodRef.current = next;
 
       // Written straight to the DOM rather than held in state, since the
       // ResizeObserver below can fire every frame during layout changes.
       container.style.setProperty("--nd-period", `${next}px`);
+
+      // Every copy - not just the one that changed - shares this one period,
+      // so every copy after the first is stacked at a multiple of it. Growing
+      // or shrinking the period therefore moves the START of every later copy
+      // by (its index) * (the change), whether or not that copy's own content
+      // changed - an arrival growing the very first copy pushes copy 1's cards
+      // down; a card quietly dropping out of an off-screen copy pulls every
+      // copy after it up by the same amount. Left uncompensated, that reads as
+      // unrelated cards jumping the instant either happens - confirmed by
+      // measurement: a single removal shifted cards in this column by over
+      // 300px with nothing done about it.
+      //
+      // Nudging scrollTop by the same amount the layout just grew or shrank
+      // above the current view keeps whatever's on screen pixel-still. A
+      // single scroll offset can only anchor one point, so if the viewport
+      // straddles two copies (taller viewports do this for a real fraction of
+      // every scroll cycle) the two can't both stay perfectly still - the
+      // compensation anchors whichever copy occupies the *most* of the
+      // viewport, leaving only the smaller sliver at the opposite edge to
+      // visibly shift.
+      if (previousPeriod > 0 && next !== previousPeriod) {
+        const viewTop = container.scrollTop;
+        const viewBottom = viewTop + container.clientHeight;
+
+        const lowestCopy = Math.max(0, Math.floor(viewTop / previousPeriod));
+        const highestCopy = Math.max(
+          lowestCopy,
+          Math.floor(viewBottom / previousPeriod),
+        );
+
+        let copiesAbove = lowestCopy;
+        let bestOverlap = -Infinity;
+        for (let k = lowestCopy; k <= highestCopy; k += 1) {
+          const copyTop = k * previousPeriod;
+          const overlap =
+            Math.min(viewBottom, copyTop + previousPeriod) -
+            Math.max(viewTop, copyTop);
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            copiesAbove = k;
+          }
+        }
+
+        if (copiesAbove > 0) {
+          container.scrollTop += copiesAbove * (next - previousPeriod);
+        }
+      }
 
       // Enough copies that a full container height still sits below the
       // wrap point.

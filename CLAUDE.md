@@ -8,8 +8,8 @@ The **NORDEEP Opportunity Wall** — a public opportunity board for the NORDEEP
 Deep Tech Business Summit (16–17 September 2026, Espoo). Anyone at the event
 posts an opportunity; everyone can browse and contact the poster.
 
-Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Supabase.
-Dark theme only — that is the brand.
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4. Posts are
+stored as files on disk, no database. Dark theme only — that is the brand.
 
 | Route           | Purpose                                                        |
 | --------------- | -------------------------------------------------------------- |
@@ -25,21 +25,22 @@ Dark theme only — that is the brand.
 npm run dev        # http://localhost:3000
 npm run build      # production build; also runs TypeScript
 npm run typecheck  # tsc --noEmit
-node scripts/generate-seed-sql.mjs   # regenerate supabase/seed.sql
 ```
 
 No test suite. `npm run build` is the gate — it typechecks as part of the build.
 
-## Running without Supabase
+## Running the file store
 
-With no Supabase credentials the app serves an **in-memory demo store** seeded
-from `src/lib/seed-data.ts`, so `npm run dev` shows a populated wall with no
-setup. Submissions and moderation work but are lost on restart.
-
-The store hangs off `globalThis` (`src/lib/repository.ts`). This is deliberate:
-Next gives route handlers and pages **separate module graphs**, so a plain
-module-level array would leave `/api/opportunities` and `/admin` with private
-copies, and a post submitted through the API would never reach the queue.
+Posts live under `DATA_DIR` (defaults to `./data`), one JSON file per post,
+in `pending/` `live/` `rejected/`. On first run — a fresh checkout, or
+`DATA_DIR` pointing at a directory that does not exist yet —
+`src/lib/repository.ts` creates the three folders and seeds `live/` from
+`src/lib/seed-data.ts`, so `npm run dev` shows a populated wall with no setup.
+`data/` is gitignored, so a fresh checkout re-seeds again; a running instance
+with real posts in it is never re-seeded. `ensureDirs()` also runs a one-time
+migration that folds any leftover `approved/` folder (from before that
+staging status was removed) into `live/`, so upgrading an existing install
+never strands posts a moderator had already approved.
 
 For `/admin` locally, put this in `.env.local`:
 
@@ -52,21 +53,36 @@ ADMIN_SESSION_SECRET=another-long-random-string-32-chars-plus
 
 ### Data access
 
-Everything goes through `src/lib/repository.ts`, which is `server-only` and
-switches between Supabase and the demo store. It returns a discriminated
-`RepoResult`, never throws at callers, and pages render a calm
-`ConnectionNotice` on failure rather than an error stack.
+Everything goes through `src/lib/repository.ts`, which is `server-only`. It
+returns a discriminated `RepoResult`, never throws at callers, and pages
+render a calm `ConnectionNotice` on failure rather than an error stack.
 
-Security lives in the database, not the client (`supabase/schema.sql`):
+Each post is a JSON file (`Opportunity` fields + `status`) under one of three
+folders in `DATA_DIR`, and a post's folder **is** its status — there is no
+separate database enforcing the boundary, so the API routes are the only
+thing that does:
 
-| Role                     | SELECT                  | INSERT                | UPDATE / DELETE |
-| ------------------------ | ----------------------- | --------------------- | --------------- |
-| `anon` / `authenticated` | only `status='approved'` | only `status='pending'` | denied          |
-| `service_role`           | everything              | everything            | everything      |
+| Status      | Folder       | Who can reach it                                          |
+| ----------- | ------------ | ----------------------------------------------------------- |
+| `pending`   | `pending/`   | written by `POST /api/opportunities` (public); read by admin only |
+| `live`      | `live/`      | read by `GET /api/opportunities` and `/wall` (public); written only by admin's approve action |
+| `rejected`  | `rejected/`  | admin only, kept for audit                                    |
 
-`/admin` routes are the only code path using the service role, and each checks
-the signed admin cookie first. Public inserts deliberately omit `.select()` —
-the read policy would reject returning the freshly inserted pending row.
+`/admin` routes are the only code path that moves a file between folders, and
+each checks the signed admin cookie first. Moving a post is a read + rewrite
+into the new folder (status/timestamps updated) + delete of the old file, not
+a bare rename — see the header comment in `repository.ts` for why (the new
+file must exist before the old one is removed, so a crash mid-move can only
+ever duplicate a post, never lose it).
+
+There used to be a fourth `approved` status between `pending` and `live` -
+approving and releasing were two separate moderator actions. That staging
+step was deliberately dropped: approving a post now writes it straight to
+`live` (`AdminClient.tsx`'s single "Approve" button), and "Pull from wall"
+sends a live post back to `pending` rather than to a staging folder. If you
+ever reintroduce an in-between review stage, do it as a deliberate decision,
+not by accident - and update `STATUSES` in `src/lib/types.ts`, `AdminClient.tsx`'s
+buttons, and this section together.
 
 ### Validation
 
@@ -244,6 +260,40 @@ Hiding is scoped to `[data-reveal="on"]`, set in a layout effect, so a JS
 failure leaves cards visible rather than at `opacity: 0` forever. A viewport
 sweep backs up the IntersectionObserver, which browsers suppress when hidden.
 
+**Removal.** No animation at all - the opposite instinct from an arrival.
+`WallClient.removeCard(id)` adds the id to a `pendingRemoval` set and renders
+nothing differently: the card keeps scrolling exactly as before, in every
+loop copy, until it leaves on its own. A 400ms interval
+(`REMOVAL_CHECK_MS`) checks each pending id against every element still
+carrying its `data-card-id`, using each one's own `.nd-wall-column`
+ancestor for the bounds - a plain viewport check would treat a card that has
+scrolled below one column's clipped bottom as "visible" because a neighbour
+column happens to run taller. Only once *no* rendered copy of that id
+overlaps its own column's bounds does the check actually filter it out of
+`items`. This was a deliberate correction from an earlier shrink-to-zero
+attempt: any animated collapse changes the column's live content height
+mid-flight, and that height *is* the loop's period - shrinking it while
+other cards share the same period moved cards that were never marked for
+removal. Never dropping the item's footprint at all, only its rendered
+existence once it's already outside the clipped area, is what keeps every
+other card untouched.
+
+Dropping an id from `items` still changes that column's `--nd-period` by
+one card's footprint (see the "Column slack" note above on why compensation
+of that shift can only anchor one loop copy exactly), so the check also
+withholds the drop while the column's own viewport straddles two copies -
+`Math.floor(scrollTop / period) !== Math.floor((scrollTop + clientHeight - 1)
+/ period)` - so the compensation that runs in `WallColumn`'s `measure()` has
+zero residual by construction when the drop lands. A column sparse enough
+that a full period never fits under one viewport height would straddle
+forever, so a pending id stuck past `REMOVAL_STRADDLE_TIMEOUT_MS` (6s) is
+dropped anyway rather than left pending indefinitely.
+
+Several ids can be pending removal at once - each is independent, there is
+no queue. Reduced motion skips the wait entirely: `removeCard` filters the
+item out of `items` immediately, since there is no scroll for it to
+disappear into.
+
 ### Card variants
 
 `OpportunityCard` takes `variant: "wall" | "board"`. They deliberately differ:
@@ -263,10 +313,14 @@ is drawn on the overlay so it outlines the clickable area.
 ### Debug shortcuts
 
 On `/wall`, **numpad +** injects a ready-made sample post
-(`src/lib/debug-samples.ts`) straight into the arrival queue, and **numpad −**
-removes all of them. Client-side only: never touches the database, skips the
-rate limiter and moderation, and vanishes on reload. Enabled in development
-always; in production only with `?debug=1`.
+(`src/lib/debug-samples.ts`) straight into the arrival queue, **numpad −**
+removes all of them (instantly, no wait - a hard reset for testing, not a
+rehearsal of removal itself), and **Delete** (or Backspace) marks one random
+currently-visible card for removal - debug or real, any card on the wall,
+since removal isn't debug-id-scoped the way the sample posts are. Client-side
+only: never touches the database, skips the rate limiter and moderation, and
+vanishes on reload. Enabled in development always; in production only with
+`?debug=1`.
 
 ## Conventions
 
@@ -286,8 +340,9 @@ always; in production only with `?debug=1`.
 
 ## Gotchas
 
-- **`supabase/seed.sql` is generated.** Edit `src/lib/seed-data.ts` and rerun
-  the script; never hand-edit the SQL.
+- **`DATA_DIR` must be a real, persistent, backed-up path in production** — a
+  VPS disk, not a serverless/ephemeral filesystem. Nothing else guarantees
+  posts survive a redeploy or restart.
 - **The wall is capped at `WALL_MAX_ITEMS` (100).** It loads the whole set up
   front because a loop needs finite content — there is no pagination on `/wall`.
 - **There is no footer on `/wall`.** The page is fixed to the viewport height
@@ -296,5 +351,5 @@ always; in production only with `?debug=1`.
   left in as dead markup. Contact details live on `/board` and `/board/new`.
 - **Framing is intentional.** `frame-ancestors *` and no `X-Frame-Options`, so
   the wall can be embedded. Nothing may touch `window.top` or `window.parent`.
-- Field limits (`FIELD_LIMITS` in `src/lib/types.ts`) are enforced in three
-  places: the form, the validator, and CHECK constraints in the schema.
+- Field limits (`FIELD_LIMITS` in `src/lib/types.ts`) are enforced in two
+  places: the form and the validator. Keep them in sync.

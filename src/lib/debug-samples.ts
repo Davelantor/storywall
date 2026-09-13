@@ -61,20 +61,6 @@ const SAMPLES: Sample[] = [
     jd_url: null,
   },
   {
-    title: "Cryo-EM Specialist, Free From January",
-    organisation: "Independent, ex-Novo Nordisk",
-    type: "talent_available",
-    detail:
-      "Nine years of structural biology, most recently membrane protein pipelines at scale. Looking for a small team where the microscope is not booked out three months ahead.",
-    tags: ["Biotech"],
-    location: "Copenhagen, Denmark",
-    work_mode: "hybrid",
-    contact_email: null,
-    contact_url: "https://www.linkedin.com/in/example-cryoem",
-    contact_note: null,
-    jd_url: null,
-  },
-  {
     title: "Consortium Forming: Perovskite Stability",
     organisation: "Uppsala University",
     type: "research_collaboration",

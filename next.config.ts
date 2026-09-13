@@ -4,6 +4,15 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [{ protocol: "https", hostname: "nordeep.com" }],
   },
+  experimental: {
+    // The wall and admin queue are `force-dynamic` (no server cache), but
+    // Next's client-side Router Cache would otherwise still serve a stale
+    // RSC payload for up to 30s after a soft (Link/router) navigation. Zero
+    // it out so any navigation between pages always reflects the current
+    // moderation state - a moderator pulling a post shouldn't see it "come
+    // back" just because they navigated rather than hard-refreshed.
+    staleTimes: { dynamic: 0 },
+  },
   async headers() {
     return [
       {

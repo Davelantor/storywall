@@ -41,10 +41,7 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json(
-    { ...result.data, demo: result.demo },
-    { headers: { "cache-control": "no-store" } },
-  );
+  return NextResponse.json(result.data, { headers: { "cache-control": "no-store" } });
 }
 
 /** POST /api/opportunities - public submission. Always lands as `pending`. */
@@ -93,7 +90,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(
-    { queued: true, demo: result.demo },
+    { queued: true },
     { status: 201, headers: { "cache-control": "no-store" } },
   );
 }
