@@ -20,10 +20,19 @@ export async function qrSvg(value: string): Promise<string | null> {
   }
 }
 
+function siteOrigin(): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") ||
+    "http://localhost:3000"
+  );
+}
+
 /** Absolute URL for the submission form, used by the QR code on the wall. */
 export function submissionUrl(): string {
-  const base =
-    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") ||
-    "http://localhost:3000";
-  return `${base}/board/new`;
+  return `${siteOrigin()}/board/new`;
+}
+
+/** Absolute URL for the full board, used by the wall's "See the full board" QR code. */
+export function boardUrl(): string {
+  return `${siteOrigin()}/board`;
 }

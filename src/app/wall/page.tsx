@@ -5,7 +5,7 @@ import SiteHeader from "@/components/SiteHeader";
 import WallClient from "@/components/WallClient";
 import { ConnectionNotice, NoPostsYet } from "@/components/Notice";
 import { WALL_MAX_ITEMS } from "@/lib/constants";
-import { qrSvg, submissionUrl } from "@/lib/qr";
+import { boardUrl, qrSvg, submissionUrl } from "@/lib/qr";
 import { listOpportunities } from "@/lib/repository";
 
 export const dynamic = "force-dynamic";
@@ -32,9 +32,10 @@ export default async function WallPage({ searchParams }: Props) {
   const debug =
     process.env.NODE_ENV !== "production" || debugParam === "1";
 
-  const [feed, qr] = await Promise.all([
+  const [feed, qr, boardQr] = await Promise.all([
     listOpportunities({ limit: WALL_MAX_ITEMS, offset: 0, sort: "newest" }),
     qrSvg(submissionUrl()),
+    qrSvg(boardUrl()),
   ]);
 
   if (!feed.ok) {
@@ -76,6 +77,7 @@ export default async function WallPage({ searchParams }: Props) {
             kiosk={kiosk}
             debug={debug}
             qrSvg={qr}
+            boardQrSvg={boardQr}
           />
         )}
       </main>

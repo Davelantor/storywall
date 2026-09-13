@@ -40,6 +40,8 @@ type Props = {
   initialItems: Opportunity[];
   kiosk: boolean;
   qrSvg: string | null;
+  /** QR code for the full board, used by the "See the full board" panel. */
+  boardQrSvg: string | null;
   /** Enables the numpad shortcuts for rehearsing arrivals. */
   debug?: boolean;
 };
@@ -48,6 +50,7 @@ export default function WallClient({
   initialItems,
   kiosk,
   qrSvg,
+  boardQrSvg,
   debug = false,
 }: Props) {
   const [items, setItems] = useState<Opportunity[]>(initialItems);
@@ -591,16 +594,43 @@ export default function WallClient({
         />
       )}
 
-      {debug && (
-        <p className="fixed bottom-4 left-4 z-40 rounded-[4px] border border-nd-line bg-nd-surface px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-nd-muted">
-          Debug · <span className="text-nd-white">+</span> add sample ·{" "}
-          <span className="text-nd-white">−</span> clear samples ·{" "}
-          <span className="text-nd-white">Del</span> mark one for removal
-          {queue.length > 0 && (
-            <span className="text-nd-accent-hi"> · {queue.length} queued</span>
+      {/* Debug indicator and the "see the full board" panel share the
+          bottom-left corner, stacked rather than overlapping. */}
+      <div className="fixed bottom-4 left-4 z-40 flex flex-col items-start gap-2 sm:bottom-6 sm:left-6">
+        {debug && (
+          <p className="rounded-[4px] border border-nd-line bg-nd-surface px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-nd-muted">
+            Debug · <span className="text-nd-white">+</span> add sample ·{" "}
+            <span className="text-nd-white">−</span> clear samples ·{" "}
+            <span className="text-nd-white">Del</span> mark one for removal
+            {queue.length > 0 && (
+              <span className="text-nd-accent-hi"> · {queue.length} queued</span>
+            )}
+          </p>
+        )}
+
+        {/* Mirrors the "Post an Opportunity" panel opposite it: just the QR
+            of the board under its title, sized to stay scannable from a
+            few metres off the venue screen. No button - the whole panel is
+            the link, the QR is the visual draw. */}
+        <Link
+          href="/board"
+          className="flex flex-col items-center gap-2 rounded-[8px] px-3 py-2.5 shadow-lg shadow-black/50 transition-opacity duration-200 hover:opacity-80 sm:w-[168px] sm:border sm:border-nd-line sm:bg-nd-surface xl:w-[192px]"
+        >
+          <span className="whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.14em] text-nd-white">
+            See the Full Board
+          </span>
+          {boardQrSvg && (
+            <div
+              className="hidden aspect-square w-full shrink-0 rounded-[4px] bg-white p-1.5 sm:block [&>svg]:h-full [&>svg]:w-full"
+              // Generated server-side by the qrcode package from our own URL.
+              dangerouslySetInnerHTML={{ __html: boardQrSvg }}
+              // Decorative: the enclosing link is the accessible equivalent
+              // and goes to exactly the same place, so announcing both is noise.
+              aria-hidden="true"
+            />
           )}
-        </p>
-      )}
+        </Link>
+      </div>
 
       {/* Fixed call to action: just the QR of the submission form under its
           title, sized so the code stays scannable from a few metres off the

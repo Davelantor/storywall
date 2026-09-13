@@ -30,8 +30,8 @@ npm run dev
 ```
 
 Open <http://localhost:3000>. **No configuration is required to see it running.**
-The first time it runs, it seeds `./data/live/` with the 12 sample
-opportunities so the wall and board are never empty. Posts persist across
+The first time it runs, it seeds `./data/live/` with the sample
+opportunities (`src/lib/seed-data.ts`) so the wall and board are never empty. Posts persist across
 restarts (they're just files on disk) but the `./data` folder is gitignored,
 so a fresh checkout re-seeds again.
 
@@ -90,6 +90,7 @@ only ever reads `live/`; `POST /api/opportunities` (public) only ever writes
 into `pending/`; every route under `/api/admin/*` checks the signed admin
 session cookie before touching any other folder. Keep that boundary in mind
 before adding a new read/write path — there's no second layer behind it.
+See [`API.md`](API.md) for the full request/response contract of every route.
 
 ---
 
@@ -321,11 +322,24 @@ data/
 ## Scripts
 
 ```bash
-npm run dev        # development server
-npm run build      # production build
-npm run start      # serve the production build
-npm run typecheck  # tsc --noEmit
+npm run dev             # development server
+npm run build           # production build
+npm run start           # serve the production build
+npm run typecheck       # tsc --noEmit
+npm run test:moderation # end-to-end check of submit -> approve/reject -> public feed, against a running server
 ```
+
+There is no unit test suite; `npm run build` is the gate, since it typechecks
+as part of the build. `test:moderation` drives the real HTTP API rather than
+the data layer directly — see the header comment in
+`scripts/test-moderation-flow.mjs` for how to run it.
+
+---
+
+See [`CLAUDE.md`](CLAUDE.md) for the detailed architecture notes behind the
+wall's scrolling/arrival animation, the file-store status boundary, and
+validation — written for an AI coding agent working in this repo, but just
+as useful for a human picking it up.
 
 ---
 

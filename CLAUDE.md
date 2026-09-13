@@ -22,12 +22,18 @@ stored as files on disk, no database. Dark theme only — that is the brand.
 ## Commands
 
 ```bash
-npm run dev        # http://localhost:3000
-npm run build      # production build; also runs TypeScript
-npm run typecheck  # tsc --noEmit
+npm run dev             # http://localhost:3000
+npm run build           # production build; also runs TypeScript
+npm run typecheck       # tsc --noEmit
+npm run test:moderation # end-to-end check of the pending -> live/rejected pipeline, against a running server
 ```
 
-No test suite. `npm run build` is the gate — it typechecks as part of the build.
+No unit test suite. `npm run build` is the gate — it typechecks as part of
+the build. `test:moderation` (`scripts/test-moderation-flow.mjs`) drives the
+real HTTP API against a running dev/prod server rather than calling
+`repository.ts` directly, so it actually proves submission, admin auth,
+moderation, and the public feed work end to end; it reads `ADMIN_PASSWORD`
+from the environment or `.env.local` and cleans up every post it creates.
 
 ## Running the file store
 
@@ -186,29 +192,34 @@ whatever its own content adds up to); it only affects how balanced the
 columns look next to each other. A column left shorter than its neighbours
 just runs a shorter loop cycle, not a gap.
 
-**Column count only ever changes while idle.** `useColumnCount` takes an
-`idle` flag (`WallClient`: `!arrival && queue.length === 0`) alongside the
-live item count, and only *commits* a new column count while `idle` is true -
-the item count itself is always tracked live via a ref, just not acted on
-until then. `useMasonryColumns` clears and rebuilds every column's
-assignment from scratch whenever the column count changes, so committing it
-mid-arrival would reshuffle cards across every column while one of them is
-still animating: the exact flicker a continuously-running display must not
-have. The first version of this fix instead froze the column count to
-whatever the item count was at mount and never revisited it - simpler, but
-wrong in a different way: a kiosk opened early in the two-day event with a
-handful of approved posts would stay capped at that count for its entire
-run, never widening as hundreds more posts arrive. Tracking the value live
-but only *committing* it at a quiet moment keeps both properties: the wall
-still grows into more columns as real content accumulates, it just never
-does so while something is visibly in motion. A side effect worth knowing:
-because the effect's resize listener is only attached while `idle`, a window
-resize *during* an arrival doesn't recompute the column count either - it
-picks up the new viewport width the next time the wall goes idle, same as an
-item-count change would. Verify by firing enough debug arrivals
-(numpad **+**) to cross `MIN_CARDS_PER_COLUMN`'s threshold and confirming
-the rendered `.nd-wall-column` count stays constant throughout the burst,
-then rises once the queue is empty and idle for a moment.
+**Column count is driven by viewport width, and only ever changes while
+idle.** `useColumnCount` (wall-hooks.ts) computes the minimum number of
+columns whose combined `max-width: 520px` cap (`COLUMN_MAX_WIDTH_PX`, which
+must match `.nd-wall-column`) can span the current `window.innerWidth`,
+clamped to `[MIN_COLUMNS, MAX_COLUMNS]` (1–8) — not a handful of fixed
+breakpoints. Fixed breakpoints left a wide gap between whichever step they
+landed on and the next (a venue display at 2560px sat on the same column
+count as 1900px, with columns nowhere near their cap and the row visibly
+short of the screen edges); computing the minimum count that fills the row
+scales continuously across 1080p/1440p/4K/anything in between instead, with
+`flex: 1 1 0` on `.nd-wall-column` stretching each one up to, but never
+past, its own cap. This is deliberately independent of how many posts
+exist — the wall reads as a full row of columns from the very first frame,
+before a single post has arrived, and columns simply fill in as posts land;
+an earlier version also capped the count by content, which was what caused
+the column count to collapse to one at zero posts and then jump around as
+the first few arrived.
+
+The count only ever *commits* on a resize while `idle` is true (`WallClient`:
+`!arrival && queue.length === 0`) — `useMasonryColumns` clears and rebuilds
+every column's assignment from scratch whenever the column count changes, so
+recomputing it mid-arrival would reshuffle cards across every column while
+one of them is still animating: the exact flicker a continuously-running
+display must not have. Because the effect's resize listener is only attached
+while `idle`, a resize *during* an arrival is picked up the next time the
+wall goes idle, not immediately. Verify by resizing the viewport mid-arrival
+and confirming the rendered `.nd-wall-column` count only updates once the
+queue is empty and idle for a moment.
 
 `pickLandingSpot()` in `WallClient` picks an arrival's column the same way:
 whichever on-screen column currently holds the least estimated content, among
@@ -237,8 +248,9 @@ real copy, so it needs to be an ordinary, manually-scrollable list rather
 than content clipped behind a fixed-height box with nothing bringing the rest
 of it into view.
 
-**Arrivals.** New posts from the 20s poll go into a **queue**, not straight onto
-the wall. One is released at a time (`ARRIVAL_SPACING_MS`) and plays a
+**Arrivals.** New posts from the poll (`POLL_INTERVAL_MS`, 5s) go into a
+**queue**, not straight onto the wall. One is released at a time
+(`ARRIVAL_SPACING_MS`) and plays a
 three-beat entrance in `ArrivalFlight.tsx`: slide in from a random edge → hold
 centre stage above everything → settle into the gap, which opens only as the
 card starts travelling to it. Party poppers (`src/lib/confetti.ts`, canvas,
